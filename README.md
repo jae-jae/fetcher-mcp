@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/jae-jae-fetcher-mcp-badge.png)](https://mseep.ai/app/jae-jae-fetcher-mcp)
+
 <div align="center">
   <img src="https://raw.githubusercontent.com/jae-jae/fetcher-mcp/refs/heads/main/icon.svg" width="100" height="100" alt="Fetcher MCP Icon" />
 </div>
