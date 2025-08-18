@@ -13,6 +13,7 @@
 [Русский](https://www.readme-i18n.com/jae-jae/fetcher-mcp?lang=ru) 
 
 # Fetcher MCP
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/jae-jae/fetcher-mcp)](https://archestra.ai/mcp-catalog/jae-jae__fetcher-mcp)
 
 MCP server for fetch web page content using Playwright headless browser.
 
