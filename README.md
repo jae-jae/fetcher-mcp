@@ -157,6 +157,14 @@ docker-compose up -d
     - `urls`: Array of URLs to fetch (required parameter)
     - Other parameters are the same as `fetch_url`
 
+- `browser_install` - Install Playwright Chromium browser binary automatically
+
+  - Installs required Chromium browser binary when not available
+  - Automatically suggested when browser installation errors occur
+  - Supports the following parameters:
+    - `withDeps`: Install system dependencies required by Chromium browser, default is false
+    - `force`: Force installation even if Chromium is already installed, default is false
+
 ## Tips
 
 ### Handling Special Website Scenarios

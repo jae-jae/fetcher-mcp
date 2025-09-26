@@ -132,21 +132,48 @@ export class BrowserService {
    */
   public async createBrowser(): Promise<Browser> {
     const viewport = this.getRandomViewport();
-    
-    return await chromium.launch({ 
-      headless: !this.isDebugMode,
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-webgl',
-        '--disable-infobars',
-        '--window-size=' + viewport.width + ',' + viewport.height,
-        '--disable-extensions'
-      ]
-    });
+
+    try {
+      return await chromium.launch({
+        headless: !this.isDebugMode,
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-webgl',
+          '--disable-infobars',
+          '--window-size=' + viewport.width + ',' + viewport.height,
+          '--disable-extensions'
+        ]
+      });
+    } catch (error: any) {
+      // Check if the error is related to missing browser installation
+      if (this.isBrowserNotInstalledError(error)) {
+        const enhancedError = new Error(
+          `Browser not installed. ${error.message}\n\n` +
+          `💡 To fix this issue, please call the 'browser_install' tool to install the required browser binaries.`
+        );
+        enhancedError.name = 'BrowserNotInstalledError';
+        throw enhancedError;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Check if error is related to browser not being installed
+   */
+  private isBrowserNotInstalledError(error: any): boolean {
+    const errorMessage = error.message?.toLowerCase() || '';
+
+    return errorMessage.includes('executable doesn\'t exist') ||
+           errorMessage.includes('browser not found') ||
+           errorMessage.includes('could not find browser') ||
+           errorMessage.includes('failed to launch browser') ||
+           errorMessage.includes('browser executable not found') ||
+           errorMessage.includes('chromium browser not found');
   }
 
   /**
