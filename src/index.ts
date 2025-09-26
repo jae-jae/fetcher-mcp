@@ -10,6 +10,7 @@ import { getConfig, isDebugMode } from "./config/index.js";
 import { createTransportProvider } from "./transports/index.js";
 import { startServer } from "./server.js";
 import { logger } from "./utils/logger.js";
+import { ensureBrowserInstalled } from "./utils/browserInstaller.js";
 
 /**
  * Start the server
@@ -24,6 +25,9 @@ async function main() {
   }
 
   try {
+    // Ensure browser is installed before starting the server
+    await ensureBrowserInstalled();
+
     // Get configuration
     const config = getConfig();
 
