@@ -1,6 +1,6 @@
 {
   "name": "fetcher-mcp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "MCP server for fetching web content using Playwright browser",
   "private": false,
   "type": "module",

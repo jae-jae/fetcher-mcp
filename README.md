@@ -47,8 +47,6 @@ First time setup - install the required browser by running the following command
 npx playwright install chromium
 ```
 
-**Note**: On first run, the required Chromium browser will be automatically downloaded and installed. This may take a few minutes but only happens once.
-
 ### HTTP and SSE Transport
 
 Use the `--transport=http` parameter to start both Streamable HTTP endpoint and SSE endpoint services simultaneously:
