@@ -12,7 +12,7 @@
     "icon.svg"
   ],
   "scripts": {
-    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "build": "rm -rf build && tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
     "watch": "tsc --watch",
     "inspector": "npm run build && npx @modelcontextprotocol/inspector build/index.js --debug",
     "install-browser": "npx playwright install chromium"
