@@ -3,6 +3,7 @@ import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
 import { FetchOptions } from "../types/index.js";
 import { logger } from "../utils/logger.js";
+import { validateUrlProtocol } from "../utils/urlValidator.js";
 
 /**
  * Tool definition for fetch_url
@@ -15,7 +16,8 @@ export const fetchUrlTool = {
     properties: {
       url: {
         type: "string",
-        description: "URL to fetch. Make sure to include the schema (http:// or https:// if not defined, preferring https for most cases)",
+        description:
+          "URL to fetch. Make sure to include the schema (http:// or https:// if not defined, preferring https for most cases)",
       },
       timeout: {
         type: "number",
@@ -77,6 +79,9 @@ export async function fetchUrl(args: any) {
     throw new Error("URL parameter is required");
   }
 
+  // Validate URL protocol for security (only allow HTTP and HTTPS)
+  validateUrlProtocol(url);
+
   const options: FetchOptions = {
     timeout: Number(args?.timeout) || 30000,
     waitUntil: String(args?.waitUntil || "load") as
@@ -95,7 +100,7 @@ export async function fetchUrl(args: any) {
 
   // Create browser service
   const browserService = new BrowserService(options);
-  
+
   // Create content processor
   const processor = new WebContentProcessor(options, "[FetchURL]");
   let browser: Browser | null = null;
@@ -108,7 +113,7 @@ export async function fetchUrl(args: any) {
   try {
     // Create a stealth browser with anti-detection measures
     browser = await browserService.createBrowser();
-    
+
     // Create a stealth browser context
     const { context, viewport } = await browserService.createContext(browser);
 
@@ -124,7 +129,7 @@ export async function fetchUrl(args: any) {
   } finally {
     // Clean up resources
     await browserService.cleanup(browser, page);
-    
+
     if (browserService.isInDebugMode()) {
       logger.debug(`Browser and page kept open for debugging. URL: ${url}`);
     }

@@ -3,6 +3,7 @@ import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
 import { FetchOptions, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
+import { validateUrlsProtocol } from "../utils/urlValidator.js";
 
 /**
  * Tool definition for fetch_urls
@@ -79,6 +80,9 @@ export async function fetchUrls(args: any) {
     throw new Error("URLs parameter is required and must be a non-empty array");
   }
 
+  // Validate all URLs protocols for security (only allow HTTP and HTTPS)
+  validateUrlsProtocol(urls);
+
   const options: FetchOptions = {
     timeout: Number(args?.timeout) || 30000,
     waitUntil: String(args?.waitUntil || "load") as
@@ -106,7 +110,7 @@ export async function fetchUrls(args: any) {
   try {
     // Create a stealth browser with anti-detection measures
     browser = await browserService.createBrowser();
-    
+
     // Create a stealth browser context
     const { context, viewport } = await browserService.createContext(browser);
 
@@ -116,7 +120,7 @@ export async function fetchUrls(args: any) {
       urls.map(async (url, index) => {
         // Create a new page with human-like behavior
         const page = await browserService.createPage(context, viewport);
-        
+
         try {
           const result = await processor.processPageContent(page, url);
           return { index, ...result } as FetchResult;
@@ -129,14 +133,14 @@ export async function fetchUrls(args: any) {
             logger.debug(`Page kept open for debugging. URL: ${url}`);
           }
         }
-      })
+      }),
     );
 
     results.sort((a, b) => (a.index || 0) - (b.index || 0));
     const combinedResults = results
       .map(
         (result, i) =>
-          `[webpage ${i + 1} begin]\n${result.content}\n[webpage ${i + 1} end]`
+          `[webpage ${i + 1} begin]\n${result.content}\n[webpage ${i + 1} end]`,
       )
       .join("\n\n");
 
