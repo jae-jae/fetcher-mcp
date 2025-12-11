@@ -157,6 +157,24 @@ docker-compose up -d
     - `urls`: Array of URLs to fetch (required parameter)
     - Other parameters are the same as `fetch_url`
 
+- `download_url` - Download web page content or files from a specified URL to a local file
+  - Downloads content directly to disk instead of returning it in context (useful for large files)
+  - Automatically detects file type (PDF, images, documents, etc.) and saves with correct extension
+  - For HTML content, processes and saves as text (Markdown or HTML based on options)
+  - For binary files (PDFs, images, archives, etc.), downloads as binary data
+  - Supports the following parameters:
+    - `url`: The URL to download (required parameter)
+    - `filePath`: Path where the file will be saved (required parameter). Directory will be created if it doesn't exist
+    - `timeout`: Page loading timeout in milliseconds, default is 30000 (30 seconds)
+    - `waitUntil`: Specifies when navigation is considered complete, options: 'load', 'domcontentloaded', 'networkidle', 'commit', default is 'load'
+    - `extractContent`: Whether to intelligently extract the main content (for HTML), default is true
+    - `maxLength`: Maximum length of returned content (in characters), default is no limit
+    - `returnHtml`: Whether to return HTML content instead of Markdown (for HTML files), default is false
+    - `waitForNavigation`: Whether to wait for additional navigation after initial page load (useful for sites with anti-bot verification), default is false
+    - `navigationTimeout`: Maximum time to wait for additional navigation in milliseconds, default is 10000 (10 seconds)
+    - `disableMedia`: Whether to disable media resources (images, stylesheets, fonts, media), default is true
+    - `debug`: Whether to enable debug mode (showing browser window), overrides the --debug command line flag if specified
+
 - `browser_install` - Install Playwright Chromium browser binary automatically
 
   - Installs required Chromium browser binary when not available

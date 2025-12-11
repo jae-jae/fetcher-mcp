@@ -13,6 +13,97 @@ export class WebContentProcessor {
     this.logPrefix = logPrefix;
   }
 
+  /**
+   * Process page content from an already-loaded page (without navigating)
+   * Use this when the page has already been navigated to avoid duplicate navigation
+   */
+  async processLoadedPageContent(page: any, url: string): Promise<FetchResult> {
+    try {
+      // Set timeout
+      page.setDefaultTimeout(this.options.timeout);
+
+      // Handle possible anti-bot verification and redirection
+      if (this.options.waitForNavigation) {
+        logger.info(
+          `${this.logPrefix} Waiting for possible navigation/redirection...`
+        );
+
+        try {
+          // Create a promise to wait for page navigation events
+          const navigationPromise = page.waitForNavigation({
+            timeout: this.options.navigationTimeout,
+            waitUntil: this.options.waitUntil,
+          });
+
+          // Set a timeout
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => {
+              reject(new Error("Navigation timeout"));
+            }, this.options.navigationTimeout);
+          });
+
+          // Wait for navigation event or timeout, whichever occurs first
+          await Promise.race([navigationPromise, timeoutPromise])
+            .then(() => {
+              logger.info(
+                `${this.logPrefix} Page navigated/redirected successfully`
+              );
+            })
+            .catch((e) => {
+              // If timeout occurs but page may have already loaded, we can continue
+              logger.warn(
+                `${this.logPrefix} No navigation occurred or navigation timeout: ${e.message}`
+              );
+            });
+        } catch (navError: any) {
+          logger.error(
+            `${this.logPrefix} Error waiting for navigation: ${navError.message}`
+          );
+          // Continue processing the page even if there are navigation issues
+        }
+      }
+
+      // Wait for the page to stabilize before getting content
+      await this.ensurePageStability(page);
+      
+      // Safely retrieve page title and content
+      const { pageTitle, html } = await this.safelyGetPageInfo(page, url);
+
+      if (!html) {
+        logger.warn(`${this.logPrefix} Browser returned empty content`);
+        return {
+          success: false,
+          content: `Title: Error\nURL: ${url}\nContent:\n\n<error>Failed to retrieve web page content: Browser returned empty content</error>`,
+          error: "Browser returned empty content",
+        };
+      }
+
+      logger.info(
+        `${this.logPrefix} Successfully retrieved web page content, length: ${html.length}`
+      );
+
+      const processedContent = await this.processContent(html, url);
+
+      // Format the response
+      const formattedContent = `Title: ${pageTitle}\nURL: ${url}\nContent:\n\n${processedContent}`;
+
+      return {
+        success: true,
+        content: formattedContent,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      logger.error(`${this.logPrefix} Error: ${errorMessage}`);
+
+      return {
+        success: false,
+        content: `Title: Error\nURL: ${url}\nContent:\n\n<error>Failed to retrieve web page content: ${errorMessage}</error>`,
+        error: errorMessage,
+      };
+    }
+  }
+
   async processPageContent(page: any, url: string): Promise<FetchResult> {
     try {
       // Set timeout
