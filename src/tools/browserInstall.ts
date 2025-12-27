@@ -27,7 +27,11 @@ export const browserInstallTool = {
       }
     },
     required: []
-  }
+  },
+  annotations: {
+    title: "Install Browser",
+    destructiveHint: true,
+  },
 };
 
 /**
