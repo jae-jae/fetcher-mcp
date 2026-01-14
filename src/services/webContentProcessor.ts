@@ -1,4 +1,4 @@
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
 // @ts-ignore
@@ -212,7 +212,8 @@ export class WebContentProcessor {
     // Extract main content if needed
     if (this.options.extractContent) {
       logger.info(`${this.logPrefix} Extracting main content`);
-      const dom = new JSDOM(html, { url });
+      const virtualConsole = new VirtualConsole();
+      const dom = new JSDOM(html, { url, virtualConsole });
       const reader = new Readability(dom.window.document);
       const article = reader.parse();
 
