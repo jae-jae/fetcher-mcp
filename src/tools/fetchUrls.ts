@@ -69,6 +69,10 @@ export const fetchUrlsTool = {
     },
     required: ["urls"],
   },
+  annotations: {
+    title: "Fetch URLs",
+    readOnlyHint: true,
+  },
 };
 
 /**
