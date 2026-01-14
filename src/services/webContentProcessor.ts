@@ -1,6 +1,8 @@
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
+// @ts-ignore
+import { gfm } from "turndown-plugin-gfm";
 import { FetchOptions, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 
@@ -231,6 +233,7 @@ export class WebContentProcessor {
     if (!this.options.returnHtml) {
       logger.info(`${this.logPrefix} Converting to Markdown`);
       const turndownService = new TurndownService();
+      turndownService.use(gfm);  // Enable GFM table support
       processedContent = turndownService.turndown(contentToProcess);
       logger.info(
         `${this.logPrefix} Successfully converted to Markdown, length: ${processedContent.length}`
