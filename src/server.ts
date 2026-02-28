@@ -43,7 +43,7 @@ function createServer() {
       throw new Error(`Unknown tool: ${toolName}`);
     }
 
-    return handler(request.params.arguments);
+    return handler(request.params.arguments ?? {});
   });
 
   return server;

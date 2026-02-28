@@ -3,6 +3,7 @@ import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
 // @ts-ignore
 import { gfm } from "turndown-plugin-gfm";
+import { Page } from "playwright";
 import { FetchOptions, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 
@@ -15,7 +16,7 @@ export class WebContentProcessor {
     this.logPrefix = logPrefix;
   }
 
-  async processPageContent(page: any, url: string): Promise<FetchResult> {
+  async processPageContent(page: Page, url: string): Promise<FetchResult> {
     try {
       // Set timeout
       page.setDefaultTimeout(this.options.timeout);
@@ -141,7 +142,7 @@ export class WebContentProcessor {
   }
 
   // Added method: Ensure page stability
-  private async ensurePageStability(page: any): Promise<void> {
+  private async ensurePageStability(page: Page): Promise<void> {
     try {
       // Check if there are ongoing network requests or navigation
       await page.waitForFunction(
@@ -152,7 +153,7 @@ export class WebContentProcessor {
       );
       
       // Wait an extra short time to ensure page stability
-      await page.waitForTimeout(500);
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       logger.info(`${this.logPrefix} Page has stabilized`);
     } catch (error) {
@@ -161,7 +162,7 @@ export class WebContentProcessor {
   }
 
   // Added method: Safely get page information (title and HTML content)
-  private async safelyGetPageInfo(page: any, url: string, retries = 3): Promise<{pageTitle: string, html: string}> {
+  private async safelyGetPageInfo(page: Page, _url: string, retries = 3): Promise<{pageTitle: string, html: string}> {
     let pageTitle = "Untitled";
     let html = "";
     let attempt = 0;

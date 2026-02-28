@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import { Server as HttpServer } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -9,7 +10,7 @@ import { logger } from "../utils/logger.js";
 /**
  * Check if a request is an initialization request
  */
-function isInitializeRequest(body: any): boolean {
+function isInitializeRequest(body: Record<string, unknown>): boolean {
   return body?.method === "initialize" && body?.jsonrpc === "2.0";
 }
 
@@ -19,7 +20,7 @@ function isInitializeRequest(body: any): boolean {
  */
 export class HttpTransportProvider implements TransportProvider {
   private app: express.Application;
-  private server: any; // HTTP server instance
+  private server: HttpServer | null = null;
   private serverFactory!: ServerFactory;
   private transports: {
     streamable: Record<string, StreamableHTTPServerTransport>;
@@ -93,8 +94,9 @@ export class HttpTransportProvider implements TransportProvider {
 
     // Close HTTP server
     if (this.server) {
+      const httpServer = this.server;
       return new Promise((resolve, reject) => {
-        this.server.close((err: Error) => {
+        httpServer.close((err?: Error) => {
           if (err) {
             logger.error(`[Transport] Failed to close HTTP server: ${err}`);
             reject(err);
