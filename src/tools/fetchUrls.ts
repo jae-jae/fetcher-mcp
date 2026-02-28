@@ -1,7 +1,7 @@
-import { Browser, Page } from "playwright";
+import { Browser } from "playwright";
 import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
-import { FetchOptions, FetchResult } from "../types/index.js";
+import { FetchUrlsArgsSchema, FetchOptionsSchema, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 import { validateUrlsProtocol } from "../utils/urlValidator.js";
 
@@ -78,30 +78,14 @@ export const fetchUrlsTool = {
 /**
  * Implementation of the fetch_urls tool
  */
-export async function fetchUrls(args: any) {
-  const urls = (args?.urls as string[]) || [];
-  if (!urls || !Array.isArray(urls) || urls.length === 0) {
-    throw new Error("URLs parameter is required and must be a non-empty array");
-  }
+export async function fetchUrls(args: Record<string, unknown> = {}) {
+  const parsed = FetchUrlsArgsSchema.parse(args);
+  const urls = parsed.urls;
 
   // Validate all URLs protocols for security (only allow HTTP and HTTPS)
   validateUrlsProtocol(urls);
 
-  const options: FetchOptions = {
-    timeout: Number(args?.timeout) || 30000,
-    waitUntil: String(args?.waitUntil || "load") as
-      | "load"
-      | "domcontentloaded"
-      | "networkidle"
-      | "commit",
-    extractContent: args?.extractContent !== false,
-    maxLength: Number(args?.maxLength) || 0,
-    returnHtml: args?.returnHtml === true,
-    waitForNavigation: args?.waitForNavigation === true,
-    navigationTimeout: Number(args?.navigationTimeout) || 10000,
-    disableMedia: args?.disableMedia !== false,
-    debug: args?.debug,
-  };
+  const options = FetchOptionsSchema.parse(parsed);
 
   // Create browser service
   const browserService = new BrowserService(options);
@@ -112,19 +96,13 @@ export async function fetchUrls(args: any) {
 
   let browser: Browser | null = null;
   try {
-    // Create a stealth browser with anti-detection measures
     browser = await browserService.createBrowser();
-
-    // Create a stealth browser context
     const { context, viewport } = await browserService.createContext(browser);
-
     const processor = new WebContentProcessor(options, "[FetchURLs]");
 
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       urls.map(async (url, index) => {
-        // Create a new page with human-like behavior
         const page = await browserService.createPage(context, viewport);
-
         try {
           const result = await processor.processPageContent(page, url);
           return { index, ...result } as FetchResult;
@@ -140,7 +118,23 @@ export async function fetchUrls(args: any) {
       }),
     );
 
-    results.sort((a, b) => (a.index || 0) - (b.index || 0));
+    const results: FetchResult[] = settled.map((outcome, i) => {
+      if (outcome.status === "fulfilled") {
+        return outcome.value;
+      }
+      const errorMessage = outcome.reason instanceof Error
+        ? outcome.reason.message
+        : String(outcome.reason);
+      logger.error(`[FetchURLs] Failed to fetch URL ${urls[i]}: ${errorMessage}`);
+      return {
+        success: false,
+        content: `Title: Error\nURL: ${urls[i]}\nContent:\n\n<error>Failed to retrieve web page content: ${errorMessage}</error>`,
+        error: errorMessage,
+        index: i,
+      };
+    });
+
+    results.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
     const combinedResults = results
       .map(
         (result, i) =>
@@ -152,7 +146,6 @@ export async function fetchUrls(args: any) {
       content: [{ type: "text", text: combinedResults }],
     };
   } finally {
-    // Clean up browser resources
     if (!browserService.isInDebugMode()) {
       if (browser)
         await browser
