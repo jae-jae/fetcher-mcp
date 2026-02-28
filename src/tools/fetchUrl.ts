@@ -1,7 +1,7 @@
 import { Browser, Page } from "playwright";
 import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
-import { FetchOptions } from "../types/index.js";
+import { FetchUrlArgsSchema, FetchOptionsSchema } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 import { validateUrlProtocol } from "../utils/urlValidator.js";
 
@@ -76,31 +76,14 @@ export const fetchUrlTool = {
 /**
  * Implementation of the fetch_url tool
  */
-export async function fetchUrl(args: any) {
-  const url = String(args?.url || "");
-  if (!url) {
-    logger.error(`URL parameter missing`);
-    throw new Error("URL parameter is required");
-  }
+export async function fetchUrl(args: Record<string, unknown> = {}) {
+  const parsed = FetchUrlArgsSchema.parse(args);
+  const url = parsed.url;
 
   // Validate URL protocol for security (only allow HTTP and HTTPS)
   validateUrlProtocol(url);
 
-  const options: FetchOptions = {
-    timeout: Number(args?.timeout) || 30000,
-    waitUntil: String(args?.waitUntil || "load") as
-      | "load"
-      | "domcontentloaded"
-      | "networkidle"
-      | "commit",
-    extractContent: args?.extractContent !== false,
-    maxLength: Number(args?.maxLength) || 0,
-    returnHtml: args?.returnHtml === true,
-    waitForNavigation: args?.waitForNavigation === true,
-    navigationTimeout: Number(args?.navigationTimeout) || 10000,
-    disableMedia: args?.disableMedia !== false,
-    debug: args?.debug,
-  };
+  const options = FetchOptionsSchema.parse(parsed);
 
   // Create browser service
   const browserService = new BrowserService(options);
