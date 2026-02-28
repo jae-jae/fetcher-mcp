@@ -89,11 +89,9 @@ export async function startServer(
   transportProvider: TransportProvider
 ): Promise<void> {
   try {
-    const server = createServer();
     logger.info("[Server] Starting MCP server...");
-
-    // Connect to transport
-    await transportProvider.connect(server);
+    // Connect to transport (pass factory so HTTP can create per-session servers)
+    await transportProvider.connect(createServer);
 
     logger.info("[Server] MCP server started");
 
