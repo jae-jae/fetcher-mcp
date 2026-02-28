@@ -36,7 +36,7 @@ export function validateUrlProtocol(url: string): string {
   try {
     // Try to parse the URL
     parsedUrl = new URL(trimmedUrl);
-  } catch (error) {
+  } catch {
     // If parsing fails, it might be a relative URL or malformed
     throw new URLSecurityError(`Invalid URL format: ${trimmedUrl}`);
   }
@@ -76,13 +76,15 @@ export function validateUrlsProtocol(urls: string[]): string[] {
 
   for (let i = 0; i < urls.length; i++) {
     try {
-      const validatedUrl = validateUrlProtocol(urls[i]);
+      const url = urls[i];
+      if (!url) continue;
+      const validatedUrl = validateUrlProtocol(url);
       validatedUrls.push(validatedUrl);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       errors.push({
-        url: urls[i],
+        url: urls[i] ?? `(index ${i})`,
         error: errorMessage,
       });
     }
