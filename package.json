@@ -18,11 +18,7 @@
     "install-browser": "npx playwright install chromium",
     "postinstall": "playwright install chromium",
     "lint": "eslint src/",
-    "check": "tsc --noEmit && eslint src/",
-    "prepare": "husky"
-  },
-  "lint-staged": {
-    "src/**/*.ts": "eslint --fix"
+    "check": "tsc --noEmit && eslint src/"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -42,8 +38,6 @@
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "eslint": "^10.0.2",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.3.0",
     "typescript": "^5.3.3"
   },
   "main": "index.js",

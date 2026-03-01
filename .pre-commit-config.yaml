@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        language: system
+        entry: npx eslint --fix
+        types: [ts]
+        files: ^src/
