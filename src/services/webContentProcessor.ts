@@ -1,6 +1,9 @@
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
+// @ts-ignore
+import { gfm } from "turndown-plugin-gfm";
+import { Page } from "playwright";
 import { FetchOptions, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 
@@ -13,7 +16,7 @@ export class WebContentProcessor {
     this.logPrefix = logPrefix;
   }
 
-  async processPageContent(page: any, url: string): Promise<FetchResult> {
+  async processPageContent(page: Page, url: string): Promise<FetchResult> {
     try {
       // Set timeout
       page.setDefaultTimeout(this.options.timeout);
@@ -25,33 +28,35 @@ export class WebContentProcessor {
           timeout: this.options.timeout,
           waitUntil: this.options.waitUntil,
         });
-      } catch (gotoError: any) {
+      } catch (gotoError: unknown) {
+        const gotoMessage = gotoError instanceof Error ? gotoError.message : String(gotoError);
         // If it's a timeout error, try to retrieve page content
-        if (gotoError.message.includes("Timeout") || gotoError.message.includes("timeout")) {
-          logger.warn(`${this.logPrefix} Navigation timeout: ${gotoError.message}. Attempting to retrieve content anyway...`);
-          
+        if (gotoMessage.includes("Timeout") || gotoMessage.includes("timeout")) {
+          logger.warn(`${this.logPrefix} Navigation timeout: ${gotoMessage}. Attempting to retrieve content anyway...`);
+
           // Try to retrieve page content
           try {
             // Directly get page information without waiting for page stability
             const { pageTitle, html } = await this.safelyGetPageInfo(page, url);
-            
+
             // If content is retrieved, process and return it
             if (html && html.trim().length > 0) {
               logger.info(`${this.logPrefix} Successfully retrieved content despite timeout, length: ${html.length}`);
-              
+
               const processedContent = await this.processContent(html, url);
               const formattedContent = `Title: ${pageTitle}\nURL: ${url}\nContent:\n\n${processedContent}`;
-              
+
               return {
                 success: true,
                 content: formattedContent,
               };
             }
-          } catch (retrieveError: any) {
-            logger.error(`${this.logPrefix} Failed to retrieve content after timeout: ${retrieveError.message}`);
+          } catch (retrieveError: unknown) {
+            const retrieveMessage = retrieveError instanceof Error ? retrieveError.message : String(retrieveError);
+            logger.error(`${this.logPrefix} Failed to retrieve content after timeout: ${retrieveMessage}`);
           }
         }
-        
+
         // If unable to retrieve content or it's not a timeout error, continue to throw the original error
         throw gotoError;
       }
@@ -83,15 +88,17 @@ export class WebContentProcessor {
                 `${this.logPrefix} Page navigated/redirected successfully`
               );
             })
-            .catch((e) => {
+            .catch((e: unknown) => {
+              const msg = e instanceof Error ? e.message : String(e);
               // If timeout occurs but page may have already loaded, we can continue
               logger.warn(
-                `${this.logPrefix} No navigation occurred or navigation timeout: ${e.message}`
+                `${this.logPrefix} No navigation occurred or navigation timeout: ${msg}`
               );
             });
-        } catch (navError: any) {
+        } catch (navError: unknown) {
+          const navMessage = navError instanceof Error ? navError.message : String(navError);
           logger.error(
-            `${this.logPrefix} Error waiting for navigation: ${navError.message}`
+            `${this.logPrefix} Error waiting for navigation: ${navMessage}`
           );
           // Continue processing the page even if there are navigation issues
         }
@@ -99,7 +106,7 @@ export class WebContentProcessor {
 
       // Wait for the page to stabilize before getting content
       await this.ensurePageStability(page);
-      
+
       // Safely retrieve page title and content
       const { pageTitle, html } = await this.safelyGetPageInfo(page, url);
 
@@ -138,57 +145,57 @@ export class WebContentProcessor {
     }
   }
 
-  // Added method: Ensure page stability
-  private async ensurePageStability(page: any): Promise<void> {
+  // Ensure page stability before content extraction
+  private async ensurePageStability(page: Page): Promise<void> {
     try {
       // Check if there are ongoing network requests or navigation
       await page.waitForFunction(
         () => {
           return window.document.readyState === 'complete';
-        }, 
+        },
         { timeout: this.options.timeout }
       );
-      
+
       // Wait an extra short time to ensure page stability
-      await page.waitForTimeout(500);
-      
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       logger.info(`${this.logPrefix} Page has stabilized`);
     } catch (error) {
       logger.warn(`${this.logPrefix} Error ensuring page stability: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  // Added method: Safely get page information (title and HTML content)
-  private async safelyGetPageInfo(page: any, url: string, retries = 3): Promise<{pageTitle: string, html: string}> {
+  // Safely get page information (title and HTML content) with retries
+  private async safelyGetPageInfo(page: Page, _url: string, retries = 3): Promise<{pageTitle: string, html: string}> {
     let pageTitle = "Untitled";
     let html = "";
     let attempt = 0;
-    
+
     while (attempt < retries) {
       try {
         attempt++;
-        
+
         // Get page title
         pageTitle = await page.title();
         logger.info(`${this.logPrefix} Page title: ${pageTitle}`);
-        
+
         // Get HTML content
         html = await page.content();
-        
+
         // If successfully retrieved, exit the loop
         return { pageTitle, html };
-        
+
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        
+
         // Check if it's an "execution context was destroyed" error
         if (errorMessage.includes("Execution context was destroyed") && attempt < retries) {
           logger.warn(`${this.logPrefix} Context destroyed, waiting for navigation to complete (attempt ${attempt}/${retries})...`);
-          
+
           // Wait for page to stabilize
           await new Promise(resolve => setTimeout(resolve, 1000));
           await this.ensurePageStability(page);
-          
+
           // If it's the last retry attempt, log the error but continue
           if (attempt === retries) {
             logger.error(`${this.logPrefix} Failed to get page info after ${retries} attempts`);
@@ -200,7 +207,7 @@ export class WebContentProcessor {
         }
       }
     }
-    
+
     return { pageTitle, html };
   }
 
@@ -210,7 +217,8 @@ export class WebContentProcessor {
     // Extract main content if needed
     if (this.options.extractContent) {
       logger.info(`${this.logPrefix} Extracting main content`);
-      const dom = new JSDOM(html, { url });
+      const virtualConsole = new VirtualConsole();
+      const dom = new JSDOM(html, { url, virtualConsole });
       const reader = new Readability(dom.window.document);
       const article = reader.parse();
 
@@ -231,6 +239,7 @@ export class WebContentProcessor {
     if (!this.options.returnHtml) {
       logger.info(`${this.logPrefix} Converting to Markdown`);
       const turndownService = new TurndownService();
+      turndownService.use(gfm);  // Enable GFM table support
       processedContent = turndownService.turndown(contentToProcess);
       logger.info(
         `${this.logPrefix} Successfully converted to Markdown, length: ${processedContent.length}`

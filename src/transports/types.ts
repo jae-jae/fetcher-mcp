@@ -14,12 +14,14 @@ export interface TransportConfig {
  * Transport provider interface
  * Defines common methods for creating and connecting transports
  */
+export type ServerFactory = () => Server;
+
 export interface TransportProvider {
   /**
    * Connect server to transport layer
-   * @param server MCP server instance
+   * @param serverOrFactory MCP server instance or factory for per-session servers
    */
-  connect(server: Server): Promise<void>;
+  connect(serverOrFactory: Server | ServerFactory): Promise<void>;
 
   /**
    * Close transport connection

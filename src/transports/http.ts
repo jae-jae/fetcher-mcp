@@ -1,15 +1,16 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import { Server as HttpServer } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { TransportProvider } from "./types.js";
+import { TransportProvider, ServerFactory } from "./types.js";
 import { logger } from "../utils/logger.js";
 
 /**
  * Check if a request is an initialization request
  */
-function isInitializeRequest(body: any): boolean {
+function isInitializeRequest(body: Record<string, unknown>): boolean {
   return body?.method === "initialize" && body?.jsonrpc === "2.0";
 }
 
@@ -19,7 +20,8 @@ function isInitializeRequest(body: any): boolean {
  */
 export class HttpTransportProvider implements TransportProvider {
   private app: express.Application;
-  private server: any; // HTTP server instance
+  private server: HttpServer | null = null;
+  private serverFactory!: ServerFactory;
   private transports: {
     streamable: Record<string, StreamableHTTPServerTransport>;
     sse: Record<string, SSEServerTransport>;
@@ -44,13 +46,17 @@ export class HttpTransportProvider implements TransportProvider {
    * Connect server to HTTP transport
    * @param server MCP server instance
    */
-  async connect(server: Server): Promise<void> {
+  async connect(serverOrFactory: Server | ServerFactory): Promise<void> {
+    this.serverFactory = typeof serverOrFactory === "function"
+      ? serverOrFactory
+      : () => serverOrFactory;
+
     logger.info(
       `[Transport] Connecting server using HTTP transport, listening on ${this.host}:${this.port}`
     );
 
     // Initialize Express routes
-    this.setupRoutes(server);
+    this.setupRoutes();
 
     // Start HTTP server
     return new Promise((resolve) => {
@@ -88,8 +94,9 @@ export class HttpTransportProvider implements TransportProvider {
 
     // Close HTTP server
     if (this.server) {
+      const httpServer = this.server;
       return new Promise((resolve, reject) => {
-        this.server.close((err: Error) => {
+        httpServer.close((err?: Error) => {
           if (err) {
             logger.error(`[Transport] Failed to close HTTP server: ${err}`);
             reject(err);
@@ -108,10 +115,10 @@ export class HttpTransportProvider implements TransportProvider {
    * Set up Express routes
    * @param mcpServer MCP server instance
    */
-  private setupRoutes(mcpServer: Server): void {
+  private setupRoutes(): void {
     // Streamable HTTP endpoint (modern MCP clients)
     this.app.post("/mcp", async (req: Request, res: Response) => {
-      await this.handleStreamableHttpRequest(mcpServer, req, res);
+      await this.handleStreamableHttpRequest(req, res);
     });
 
     // Handle GET requests (server-to-client notifications)
@@ -126,7 +133,7 @@ export class HttpTransportProvider implements TransportProvider {
 
     // SSE endpoint (legacy MCP clients)
     this.app.get("/sse", async (req: Request, res: Response) => {
-      await this.handleSseRequest(mcpServer, req, res);
+      await this.handleSseRequest(req, res);
     });
 
     // SSE message endpoint (legacy MCP clients)
@@ -157,7 +164,6 @@ export class HttpTransportProvider implements TransportProvider {
    * Handle Streamable HTTP requests
    */
   private async handleStreamableHttpRequest(
-    server: Server,
     req: Request,
     res: Response
   ): Promise<void> {
@@ -193,8 +199,8 @@ export class HttpTransportProvider implements TransportProvider {
           }
         };
 
-        // Connect to MCP server
-        await server.connect(transport);
+        // Connect to a new MCP server instance for this session
+        await this.serverFactory().connect(transport);
       } else {
         // Invalid request
         logger.error(
@@ -261,7 +267,6 @@ export class HttpTransportProvider implements TransportProvider {
    * Handle SSE requests (legacy clients)
    */
   private async handleSseRequest(
-    server: Server,
     req: Request,
     res: Response
   ): Promise<void> {
@@ -275,7 +280,7 @@ export class HttpTransportProvider implements TransportProvider {
         delete this.transports.sse[transport.sessionId];
       });
 
-      await server.connect(transport);
+      await this.serverFactory().connect(transport);
     } catch (error: any) {
       logger.error(`[Transport] Error handling SSE request: ${error.message}`);
       if (!res.headersSent) {

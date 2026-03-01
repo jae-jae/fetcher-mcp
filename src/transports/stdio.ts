@@ -1,6 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { TransportProvider } from "./types.js";
+import { TransportProvider, ServerFactory } from "./types.js";
 import { logger } from "../utils/logger.js";
 
 /**
@@ -12,9 +12,12 @@ export class StdioTransportProvider implements TransportProvider {
 
   /**
    * Connect server to Stdio transport
-   * @param server MCP server instance
+   * @param serverOrFactory MCP server instance or factory for per-session servers
    */
-  async connect(server: Server): Promise<void> {
+  async connect(serverOrFactory: Server | ServerFactory): Promise<void> {
+    const server = typeof serverOrFactory === "function"
+      ? serverOrFactory()
+      : serverOrFactory;
     logger.info("[Transport] Connecting server using Stdio transport");
     this.transport = new StdioServerTransport();
     await server.connect(this.transport);

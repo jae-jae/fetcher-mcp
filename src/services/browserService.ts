@@ -43,7 +43,7 @@ export class BrowserService {
       // Safari
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
     ];
-    return userAgents[Math.floor(Math.random() * userAgents.length)];
+    return userAgents[Math.floor(Math.random() * userAgents.length)] ?? userAgents[0]!;
   }
 
   /**
@@ -57,7 +57,7 @@ export class BrowserService {
       { width: 1440, height: 900 },
       { width: 1280, height: 720 },
     ];
-    return viewports[Math.floor(Math.random() * viewports.length)];
+    return viewports[Math.floor(Math.random() * viewports.length)] ?? viewports[0]!;
   }
 
   /**
@@ -221,7 +221,7 @@ export class BrowserService {
   /**
    * Create a new page
    */
-  public async createPage(context: BrowserContext, viewport: {width: number, height: number}): Promise<Page> {
+  public async createPage(context: BrowserContext, _viewport: {width: number, height: number}): Promise<Page> {
     const page = await context.newPage();
     return page;
   }

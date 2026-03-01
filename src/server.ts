@@ -6,7 +6,6 @@ import {
 import { tools, toolHandlers } from "./tools/index.js";
 import { TransportProvider } from "./transports/types.js";
 import { logger } from "./utils/logger.js";
-import { BrowserPoolService } from "./services/browserPoolService.js";
 
 /**
  * Create MCP server instance
@@ -44,7 +43,7 @@ function createServer() {
       throw new Error(`Unknown tool: ${toolName}`);
     }
 
-    return handler(request.params.arguments);
+    return handler(request.params.arguments ?? {});
   });
 
   return server;
@@ -57,15 +56,6 @@ function createServer() {
 function setupProcessHandlers(transportProvider: TransportProvider): void {
   const gracefulShutdown = async () => {
     logger.info("[Server] Starting graceful shutdown...");
-    const pool = BrowserPoolService.getInstance();
-
-    try {
-      await pool.shutdown();
-      logger.info("[Server] Browser pool shut down successfully");
-    } catch (err: any) {
-      logger.error(`[Server] Error shutting down pool: ${err.message}`);
-    }
-
     return transportProvider.close();
   };
 
@@ -74,8 +64,9 @@ function setupProcessHandlers(transportProvider: TransportProvider): void {
     logger.info("[Server] Received SIGINT signal, gracefully shutting down...");
     gracefulShutdown()
       .then(() => process.exit(0))
-      .catch((err) => {
-        logger.error(`[Server] Shutdown error: ${err.message}`);
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`[Server] Shutdown error: ${msg}`);
         process.exit(1);
       });
   });
@@ -87,8 +78,9 @@ function setupProcessHandlers(transportProvider: TransportProvider): void {
     );
     gracefulShutdown()
       .then(() => process.exit(0))
-      .catch((err) => {
-        logger.error(`[Server] Shutdown error: ${err.message}`);
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`[Server] Shutdown error: ${msg}`);
         process.exit(1);
       });
   });
@@ -101,8 +93,9 @@ function setupProcessHandlers(transportProvider: TransportProvider): void {
     }
     gracefulShutdown()
       .then(() => process.exit(1))
-      .catch((err) => {
-        logger.error(`[Server] Shutdown error: ${err.message}`);
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`[Server] Shutdown error: ${msg}`);
         process.exit(1);
       });
   });
@@ -116,18 +109,17 @@ export async function startServer(
   transportProvider: TransportProvider
 ): Promise<void> {
   try {
-    const server = createServer();
     logger.info("[Server] Starting MCP server...");
-
-    // Connect to transport
-    await transportProvider.connect(server);
+    // Connect to transport (pass factory so HTTP can create per-session servers)
+    await transportProvider.connect(createServer);
 
     logger.info("[Server] MCP server started");
 
     // Set up process termination handlers
     setupProcessHandlers(transportProvider);
-  } catch (error: any) {
-    logger.error(`[Server] Failed to start MCP server: ${error.message}`);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`[Server] Failed to start MCP server: ${msg}`);
     throw error;
   }
 }
