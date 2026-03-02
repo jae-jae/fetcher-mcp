@@ -13,7 +13,7 @@ export function parseTransportConfig(): TransportConfig {
   // Parse transport type
   const transportArg = args.find((arg) => arg.startsWith("--transport="));
   if (transportArg) {
-    const transportValue = transportArg.split("=")[1].toLowerCase();
+    const transportValue = transportArg.split("=")[1]?.toLowerCase();
     if (transportValue === "http") {
       config.type = "http";
     }
@@ -24,7 +24,7 @@ export function parseTransportConfig(): TransportConfig {
     // Parse port
     const portArg = args.find((arg) => arg.startsWith("--port="));
     if (portArg) {
-      const portValue = parseInt(portArg.split("=")[1], 10);
+      const portValue = parseInt(portArg.split("=")[1] ?? "", 10);
       if (!isNaN(portValue)) {
         config.port = portValue;
       }
@@ -33,7 +33,7 @@ export function parseTransportConfig(): TransportConfig {
     // Parse host
     const hostArg = args.find((arg) => arg.startsWith("--host="));
     if (hostArg) {
-      config.host = hostArg.split("=")[1];
+      config.host = hostArg.split("=")[1] ?? "localhost";
     }
   }
 

@@ -1,10 +1,10 @@
-import { Browser, BrowserContext, Page } from "playwright";
+import { Browser } from "playwright";
 import pLimit from "p-limit";
 import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
-import { BrowserPoolService } from "../services/browserPoolService.js";
-import { FetchOptions, FetchResult } from "../types/index.js";
+import { FetchUrlsArgsSchema, FetchOptionsSchema, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
+import { validateUrlsProtocol } from "../utils/urlValidator.js";
 
 /**
  * Tool definition for fetch_urls
@@ -70,32 +70,23 @@ export const fetchUrlsTool = {
     },
     required: ["urls"],
   },
+  annotations: {
+    title: "Fetch URLs",
+    readOnlyHint: true,
+  },
 };
 
 /**
  * Implementation of the fetch_urls tool
  */
-export async function fetchUrls(args: any) {
-  const urls = (args?.urls as string[]) || [];
-  if (!urls || !Array.isArray(urls) || urls.length === 0) {
-    throw new Error("URLs parameter is required and must be a non-empty array");
-  }
+export async function fetchUrls(args: Record<string, unknown> = {}) {
+  const parsed = FetchUrlsArgsSchema.parse(args);
+  const urls = parsed.urls;
 
-  const options: FetchOptions = {
-    timeout: Number(args?.timeout) || 30000,
-    waitUntil: String(args?.waitUntil || "load") as
-      | "load"
-      | "domcontentloaded"
-      | "networkidle"
-      | "commit",
-    extractContent: args?.extractContent !== false,
-    maxLength: Number(args?.maxLength) || 0,
-    returnHtml: args?.returnHtml === true,
-    waitForNavigation: args?.waitForNavigation === true,
-    navigationTimeout: Number(args?.navigationTimeout) || 10000,
-    disableMedia: args?.disableMedia !== false,
-    debug: args?.debug,
-  };
+  // Validate all URL protocols for security (only allow HTTP and HTTPS)
+  validateUrlsProtocol(urls);
+
+  const options = FetchOptionsSchema.parse(parsed);
 
   // Configure concurrency limit for page creation
   let maxConcurrentPages = parseInt(
@@ -117,21 +108,16 @@ export async function fetchUrls(args: any) {
     logger.debug(`Debug mode enabled for URLs: ${urls.join(", ")}`);
   }
 
-  const pool = BrowserPoolService.getInstance();
-  const processor = new WebContentProcessor(options, "[FetchURLs]");
-
+  let browser: Browser | null = null;
   try {
-    const results = await Promise.all(
+    browser = await browserService.createBrowser();
+    const { context, viewport } = await browserService.createContext(browser);
+    const processor = new WebContentProcessor(options, "[FetchURLs]");
+
+    const settled = await Promise.allSettled(
       urls.map((url, index) =>
         limit(async () => {
-          const handle = await pool.acquireBrowser(browserService, options);
-
-          // Create a new page with human-like behavior
-          const page = await browserService.createPage(
-            handle.context,
-            handle.viewport
-          );
-
+          const page = await browserService.createPage(context, viewport);
           try {
             const result = await processor.processPageContent(page, url);
             return { index, ...result } as FetchResult;
@@ -139,33 +125,50 @@ export async function fetchUrls(args: any) {
             if (!browserService.isInDebugMode()) {
               await page
                 .close()
-                .catch((e) =>
-                  logger.error(`Failed to close page: ${e.message}`)
-                );
+                .catch((e) => logger.error(`Failed to close page: ${e.message}`));
             } else {
               logger.debug(`Page kept open for debugging. URL: ${url}`);
             }
-
-            // Release browser back to pool
-            await handle.releaseContext();
           }
         })
-      )
+      ),
     );
 
-    results.sort((a, b) => (a.index || 0) - (b.index || 0));
+    const results: FetchResult[] = settled.map((outcome, i) => {
+      if (outcome.status === "fulfilled") {
+        return outcome.value;
+      }
+      const errorMessage = outcome.reason instanceof Error
+        ? outcome.reason.message
+        : String(outcome.reason);
+      logger.error(`[FetchURLs] Failed to fetch URL ${urls[i]}: ${errorMessage}`);
+      return {
+        success: false,
+        content: `Title: Error\nURL: ${urls[i]}\nContent:\n\n<error>Failed to retrieve web page content: ${errorMessage}</error>`,
+        error: errorMessage,
+        index: i,
+      };
+    });
+
+    results.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
     const combinedResults = results
       .map(
         (result, i) =>
-          `[webpage ${i + 1} begin]\n${result.content}\n[webpage ${i + 1} end]`
+          `[webpage ${i + 1} begin]\n${result.content}\n[webpage ${i + 1} end]`,
       )
       .join("\n\n");
 
     return {
       content: [{ type: "text", text: combinedResults }],
     };
-  } catch (error) {
-    logger.error(`[FetchURLs] Error processing URLs: ${(error as Error).message}`);
-    throw error;
+  } finally {
+    if (!browserService.isInDebugMode()) {
+      if (browser)
+        await browser
+          .close()
+          .catch((e) => logger.error(`Failed to close browser: ${e.message}`));
+    } else {
+      logger.debug(`Browser kept open for debugging. URLs: ${urls.join(", ")}`);
+    }
   }
 }

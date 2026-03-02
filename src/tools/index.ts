@@ -10,7 +10,9 @@ export const tools = [
 ];
 
 // Export tool implementations
-export const toolHandlers = {
+type ToolHandler = (args: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[] }>;
+
+export const toolHandlers: Record<string, ToolHandler> = {
   [fetchUrlTool.name]: fetchUrl,
   [fetchUrlsTool.name]: fetchUrls,
   [browserInstallTool.name]: browserInstall

@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import { createRequire } from "module";
 import { existsSync } from "fs";
 import { logger } from "../utils/logger.js";
+import { BrowserInstallArgsSchema } from "../types/index.js";
 
 // Create require for ES modules
 const require = createRequire(import.meta.url);
@@ -33,9 +34,8 @@ export const browserInstallTool = {
 /**
  * Implementation of the browser_install tool
  */
-export async function browserInstall(args: any) {
-  const withDeps = args?.withDeps === true;
-  const force = args?.force === true;
+export async function browserInstall(args: Record<string, unknown> = {}) {
+  const { withDeps, force } = BrowserInstallArgsSchema.parse(args);
 
   logger.info("[BrowserInstall] Starting installation of Chromium browser...");
 

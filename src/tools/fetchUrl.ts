@@ -1,9 +1,9 @@
-import { Browser, BrowserContext, Page } from "playwright";
+import { Browser, Page } from "playwright";
 import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
-import { BrowserPoolService } from "../services/browserPoolService.js";
-import { FetchOptions } from "../types/index.js";
+import { FetchUrlArgsSchema, FetchOptionsSchema } from "../types/index.js";
 import { logger } from "../utils/logger.js";
+import { validateUrlProtocol } from "../utils/urlValidator.js";
 
 /**
  * Tool definition for fetch_url
@@ -16,7 +16,8 @@ export const fetchUrlTool = {
     properties: {
       url: {
         type: "string",
-        description: "URL to fetch. Make sure to include the schema (http:// or https:// if not defined, preferring https for most cases)",
+        description:
+          "URL to fetch. Make sure to include the schema (http:// or https:// if not defined, preferring https for most cases)",
       },
       timeout: {
         type: "number",
@@ -66,53 +67,45 @@ export const fetchUrlTool = {
     },
     required: ["url"],
   },
+  annotations: {
+    title: "Fetch URL",
+    readOnlyHint: true,
+  },
 };
 
 /**
  * Implementation of the fetch_url tool
  */
-export async function fetchUrl(args: any) {
-  const url = String(args?.url || "");
-  if (!url) {
-    logger.error(`URL parameter missing`);
-    throw new Error("URL parameter is required");
-  }
+export async function fetchUrl(args: Record<string, unknown> = {}) {
+  const parsed = FetchUrlArgsSchema.parse(args);
+  const url = parsed.url;
 
-  const options: FetchOptions = {
-    timeout: Number(args?.timeout) || 30000,
-    waitUntil: String(args?.waitUntil || "load") as
-      | "load"
-      | "domcontentloaded"
-      | "networkidle"
-      | "commit",
-    extractContent: args?.extractContent !== false,
-    maxLength: Number(args?.maxLength) || 0,
-    returnHtml: args?.returnHtml === true,
-    waitForNavigation: args?.waitForNavigation === true,
-    navigationTimeout: Number(args?.navigationTimeout) || 10000,
-    disableMedia: args?.disableMedia !== false,
-    debug: args?.debug,
-  };
+  // Validate URL protocol for security (only allow HTTP and HTTPS)
+  validateUrlProtocol(url);
+
+  const options = FetchOptionsSchema.parse(parsed);
 
   // Create browser service
   const browserService = new BrowserService(options);
 
   // Create content processor
   const processor = new WebContentProcessor(options, "[FetchURL]");
+  let browser: Browser | null = null;
   let page: Page | null = null;
-  const pool = BrowserPoolService.getInstance();
-  let handle = null as any;
 
   if (browserService.isInDebugMode()) {
     logger.debug(`Debug mode enabled for URL: ${url}`);
   }
 
   try {
-    // Acquire browser from pool
-    handle = await pool.acquireBrowser(browserService, options);
+    // Create a stealth browser with anti-detection measures
+    browser = await browserService.createBrowser();
+
+    // Create a stealth browser context
+    const { context, viewport } = await browserService.createContext(browser);
 
     // Create a new page with human-like behavior
-    page = await browserService.createPage(handle.context, handle.viewport);
+    page = await browserService.createPage(context, viewport);
 
     // Process page content
     const result = await processor.processPageContent(page, url);
@@ -121,17 +114,8 @@ export async function fetchUrl(args: any) {
       content: [{ type: "text", text: result.content }],
     };
   } finally {
-    // Clean up page
-    if (page && !browserService.isInDebugMode()) {
-      await page
-        .close()
-        .catch((e) => logger.error(`Failed to close page: ${e.message}`));
-    }
-
-    // Release browser back to pool
-    if (handle) {
-      await handle.releaseContext();
-    }
+    // Clean up resources
+    await browserService.cleanup(browser, page);
 
     if (browserService.isInDebugMode()) {
       logger.debug(`Browser and page kept open for debugging. URL: ${url}`);
