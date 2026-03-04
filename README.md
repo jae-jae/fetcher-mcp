@@ -13,6 +13,8 @@
 
 # Fetcher MCP
 
+[![MCP Shield](https://img.shields.io/badge/MCP_Shield-A%2B_(96)-brightgreen)](https://github.com/thuggeelya/mcp-shield)
+
 MCP server for fetch web page content using Playwright headless browser.
 
 > 🌟 **Recommended**: [OllaMan](https://ollaman.com/) - Powerful Ollama AI Model Manager.
