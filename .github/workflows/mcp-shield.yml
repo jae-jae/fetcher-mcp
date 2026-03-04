@@ -11,6 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: thuggeelya/mcp-shield-action@v1
+      - uses: actions/setup-node@v4
         with:
-          server: 'npx -y fetcher-mcp'
+          node-version: 20
+      - run: npm ci
+      - run: npm run build
+      - uses: thuggeelya/mcp-shield-action@23b14aa85fca81748712a935bf4b38271870093c # v1
+        with:
+          server: 'node build/index.js'
