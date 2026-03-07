@@ -5,6 +5,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { tools, toolHandlers } from "./tools/index.js";
 import { TransportProvider } from "./transports/types.js";
+import { BrowserPool } from "./services/browserPool.js";
 import { logger } from "./utils/logger.js";
 
 /**
@@ -56,6 +57,7 @@ function createServer() {
 function setupProcessHandlers(transportProvider: TransportProvider): void {
   const gracefulShutdown = async () => {
     logger.info("[Server] Starting graceful shutdown...");
+    await BrowserPool.getInstance().shutdown();
     return transportProvider.close();
   };
 

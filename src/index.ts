@@ -9,6 +9,7 @@
 import { getConfig, isDebugMode } from "./config/index.js";
 import { createTransportProvider } from "./transports/index.js";
 import { startServer } from "./server.js";
+import { BrowserPool } from "./services/browserPool.js";
 import { logger } from "./utils/logger.js";
 
 /**
@@ -32,6 +33,9 @@ async function main() {
 
     // Start server
     await startServer(transportProvider);
+
+    // Pre-warm browser pool
+    await BrowserPool.getInstance().warm();
 
     logger.info("[Setup] Server started");
 
