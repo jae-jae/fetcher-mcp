@@ -1,7 +1,7 @@
-import { Browser } from "playwright";
 import pLimit from "p-limit";
 import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
+import { BrowserPool, BrowserHandle } from "../services/browserPool.js";
 import { FetchUrlsArgsSchema, FetchOptionsSchema, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 import { validateUrlsProtocol } from "../utils/urlValidator.js";
@@ -83,12 +83,10 @@ export async function fetchUrls(args: Record<string, unknown> = {}) {
   const parsed = FetchUrlsArgsSchema.parse(args);
   const urls = parsed.urls;
 
-  // Validate all URL protocols for security (only allow HTTP and HTTPS)
   validateUrlsProtocol(urls);
 
   const options = FetchOptionsSchema.parse(parsed);
 
-  // Configure concurrency limit for page creation
   let maxConcurrentPages = parseInt(
     process.env.MAX_CONCURRENT_PAGES || "5",
     10
@@ -101,33 +99,36 @@ export async function fetchUrls(args: Record<string, unknown> = {}) {
   }
   const limit = pLimit(maxConcurrentPages);
 
-  // Create browser service
   const browserService = new BrowserService(options);
+  const processor = new WebContentProcessor(options, "[FetchURLs]");
 
-  if (browserService.isInDebugMode()) {
-    logger.debug(`Debug mode enabled for URLs: ${urls.join(", ")}`);
-  }
+  const pool = BrowserPool.getInstance();
+  let handle: BrowserHandle | null = null;
 
-  let browser: Browser | null = null;
   try {
-    browser = await browserService.createBrowser();
-    const { context, viewport } = await browserService.createContext(browser);
-    const processor = new WebContentProcessor(options, "[FetchURLs]");
+    handle = await pool.acquire(browserService.isInDebugMode());
 
     const settled = await Promise.allSettled(
       urls.map((url, index) =>
         limit(async () => {
-          const page = await browserService.createPage(context, viewport);
+          const { context, viewport } = await browserService.createContext(handle!.browser);
           try {
-            const result = await processor.processPageContent(page, url);
-            return { index, ...result } as FetchResult;
+            const page = await browserService.createPage(context, viewport);
+            try {
+              const result = await processor.processPageContent(page, url);
+              return { index, ...result } as FetchResult;
+            } finally {
+              if (!browserService.isInDebugMode()) {
+                await page.close().catch((e: Error) =>
+                  logger.error(`[FetchURLs] Failed to close page: ${e.message}`)
+                );
+              }
+            }
           } finally {
             if (!browserService.isInDebugMode()) {
-              await page
-                .close()
-                .catch((e) => logger.error(`Failed to close page: ${e.message}`));
-            } else {
-              logger.debug(`Page kept open for debugging. URL: ${url}`);
+              await context.close().catch((e: Error) =>
+                logger.error(`[FetchURLs] Failed to close context: ${e.message}`)
+              );
             }
           }
         })
@@ -162,13 +163,6 @@ export async function fetchUrls(args: Record<string, unknown> = {}) {
       content: [{ type: "text", text: combinedResults }],
     };
   } finally {
-    if (!browserService.isInDebugMode()) {
-      if (browser)
-        await browser
-          .close()
-          .catch((e) => logger.error(`Failed to close browser: ${e.message}`));
-    } else {
-      logger.debug(`Browser kept open for debugging. URLs: ${urls.join(", ")}`);
-    }
+    if (handle) await handle.release();
   }
 }
