@@ -1,6 +1,6 @@
-import { Browser, Page } from "playwright";
 import { WebContentProcessor } from "../services/webContentProcessor.js";
 import { BrowserService } from "../services/browserService.js";
+import { BrowserPool, BrowserHandle } from "../services/browserPool.js";
 import { FetchUrlArgsSchema, FetchOptionsSchema } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 import { validateUrlProtocol } from "../utils/urlValidator.js";
@@ -80,45 +80,34 @@ export async function fetchUrl(args: Record<string, unknown> = {}) {
   const parsed = FetchUrlArgsSchema.parse(args);
   const url = parsed.url;
 
-  // Validate URL protocol for security (only allow HTTP and HTTPS)
   validateUrlProtocol(url);
 
   const options = FetchOptionsSchema.parse(parsed);
-
-  // Create browser service
   const browserService = new BrowserService(options);
-
-  // Create content processor
   const processor = new WebContentProcessor(options, "[FetchURL]");
-  let browser: Browser | null = null;
-  let page: Page | null = null;
 
-  if (browserService.isInDebugMode()) {
-    logger.debug(`Debug mode enabled for URL: ${url}`);
-  }
+  const pool = BrowserPool.getInstance();
+  let handle: BrowserHandle | null = null;
 
   try {
-    // Create a stealth browser with anti-detection measures
-    browser = await browserService.createBrowser();
+    handle = await pool.acquire(browserService.isInDebugMode());
+    const { context, viewport } = await browserService.createContext(handle.browser);
 
-    // Create a stealth browser context
-    const { context, viewport } = await browserService.createContext(browser);
+    try {
+      const page = await browserService.createPage(context, viewport);
+      const result = await processor.processPageContent(page, url);
 
-    // Create a new page with human-like behavior
-    page = await browserService.createPage(context, viewport);
-
-    // Process page content
-    const result = await processor.processPageContent(page, url);
-
-    return {
-      content: [{ type: "text", text: result.content }],
-    };
-  } finally {
-    // Clean up resources
-    await browserService.cleanup(browser, page);
-
-    if (browserService.isInDebugMode()) {
-      logger.debug(`Browser and page kept open for debugging. URL: ${url}`);
+      return {
+        content: [{ type: "text", text: result.content }],
+      };
+    } finally {
+      if (!browserService.isInDebugMode()) {
+        await context.close().catch((e: Error) =>
+          logger.error(`[FetchURL] Failed to close context: ${e.message}`)
+        );
+      }
     }
+  } finally {
+    if (handle) await handle.release();
   }
 }
