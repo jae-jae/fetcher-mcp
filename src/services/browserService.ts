@@ -1,9 +1,10 @@
-import { Browser, BrowserContext, Page, chromium } from "playwright";
-import { logger } from "../utils/logger.js";
+import { Browser, BrowserContext, Page } from "playwright";
 import { FetchOptions } from "../types/index.js";
 
 /**
- * Service for managing browser instances with anti-detection features
+ * Service for managing browser contexts and pages with anti-detection features.
+ * Browser lifecycle is now owned by BrowserPool — this service handles
+ * context creation, page creation, and stealth configuration.
  */
 export class BrowserService {
   private options: FetchOptions;
@@ -12,7 +13,7 @@ export class BrowserService {
   constructor(options: FetchOptions) {
     this.options = options;
     this.isDebugMode = process.argv.includes("--debug");
-    
+
     // Debug mode from options takes precedence over command line flag
     if (options.debug !== undefined) {
       this.isDebugMode = options.debug;
@@ -69,31 +70,31 @@ export class BrowserService {
       Object.defineProperty(navigator, 'webdriver', {
         get: () => false,
       });
-      
+
       // Remove automation fingerprints
       delete (window as any).cdc_adoQpoasnfa76pfcZLmcfl_Array;
       delete (window as any).cdc_adoQpoasnfa76pfcZLmcfl_Promise;
       delete (window as any).cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-      
+
       // Add Chrome object for fingerprinting evasion
       const chrome = {
         runtime: {},
       };
-      
+
       // Add fingerprint characteristics
       (window as any).chrome = chrome;
-      
+
       // Modify screen and navigator properties
       Object.defineProperty(screen, 'width', { value: window.innerWidth });
       Object.defineProperty(screen, 'height', { value: window.innerHeight });
       Object.defineProperty(screen, 'availWidth', { value: window.innerWidth });
       Object.defineProperty(screen, 'availHeight', { value: window.innerHeight });
-      
+
       // Add language features
       Object.defineProperty(navigator, 'languages', {
         get: () => ['en-US', 'en'],
       });
-      
+
       // Simulate random number of plugins
       Object.defineProperty(navigator, 'plugins', {
         get: () => {
@@ -128,60 +129,11 @@ export class BrowserService {
   }
 
   /**
-   * Create a new stealth browser instance
-   */
-  public async createBrowser(): Promise<Browser> {
-    const viewport = this.getRandomViewport();
-
-    try {
-      return await chromium.launch({
-        headless: !this.isDebugMode,
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-webgl',
-          '--disable-infobars',
-          '--window-size=' + viewport.width + ',' + viewport.height,
-          '--disable-extensions'
-        ]
-      });
-    } catch (error: any) {
-      // Check if the error is related to missing browser installation
-      if (this.isBrowserNotInstalledError(error)) {
-        const enhancedError = new Error(
-          `Browser not installed. ${error.message}\n\n` +
-          `💡 To fix this issue, please call the 'browser_install' tool to install the required browser binaries.`
-        );
-        enhancedError.name = 'BrowserNotInstalledError';
-        throw enhancedError;
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Check if error is related to browser not being installed
-   */
-  private isBrowserNotInstalledError(error: any): boolean {
-    const errorMessage = error.message?.toLowerCase() || '';
-
-    return errorMessage.includes('executable doesn\'t exist') ||
-           errorMessage.includes('browser not found') ||
-           errorMessage.includes('could not find browser') ||
-           errorMessage.includes('failed to launch browser') ||
-           errorMessage.includes('browser executable not found') ||
-           errorMessage.includes('chromium browser not found');
-  }
-
-  /**
    * Create a new browser context with stealth configurations
    */
   public async createContext(browser: Browser): Promise<{ context: BrowserContext, viewport: {width: number, height: number} }> {
     const viewport = this.getRandomViewport();
-    
+
     const context = await browser.newContext({
       javaScriptEnabled: true,
       ignoreHTTPSErrors: true,
@@ -211,10 +163,10 @@ export class BrowserService {
 
     // Set up anti-detection measures
     await this.setupAntiDetection(context);
-    
+
     // Configure media handling
     await this.setupMediaHandling(context);
-    
+
     return { context, viewport };
   }
 
@@ -224,28 +176,5 @@ export class BrowserService {
   public async createPage(context: BrowserContext, _viewport: {width: number, height: number}): Promise<Page> {
     const page = await context.newPage();
     return page;
-  }
-
-  /**
-   * Clean up resources
-   */
-  public async cleanup(browser: Browser | null, page: Page | null, context: BrowserContext | null = null): Promise<void> {
-    if (!this.isDebugMode) {
-      if (page) {
-        await page
-          .close()
-          .catch((e) => logger.error(`Failed to close page: ${e.message}`));
-      }
-      if (context) {
-        await context
-          .close()
-          .catch((e) => logger.error(`Failed to close context: ${e.message}`));
-      }
-      if (browser) {
-        await browser
-          .close()
-          .catch((e) => logger.error(`Failed to close browser: ${e.message}`));
-      }
-    }
   }
 }
