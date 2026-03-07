@@ -39,7 +39,7 @@ jobs:
   publish:
     needs: release
     if: ${{ needs.release.outputs.release_created }}
-    runs-on: ubuntu-latest
+    runs-on: lab
     permissions:
       contents: read
       packages: write
