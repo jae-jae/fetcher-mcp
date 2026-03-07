@@ -1,0 +1,18 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "fetcher-mcp",
+      "include-component-in-tag": false,
+      "changelog-sections": [
+        {"type": "feat", "section": "Features"},
+        {"type": "fix", "section": "Bug Fixes"},
+        {"type": "perf", "section": "Performance"},
+        {"type": "docs", "section": "Documentation", "hidden": true},
+        {"type": "chore", "section": "Maintenance", "hidden": true},
+        {"type": "refactor", "section": "Refactoring", "hidden": true},
+        {"type": "test", "section": "Tests", "hidden": true}
+      ]
+    }
+  }
+}
