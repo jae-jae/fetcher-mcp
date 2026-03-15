@@ -33,12 +33,16 @@ MCP server for fetch web page content using Playwright headless browser.
 
 - **Configurable Parameters**: Fine-grained control over timeouts, content extraction, and output formatting to suit different use cases.
 
+- **Environment Variable Configuration** (v0.4.0+): All parameters can be configured via environment variables with `FETCHER_` prefix, enabling flexible deployment in Docker and MCP configs.
+
+- **Proxy Support** (v0.4.0+): Built-in proxy support for HTTP/HTTPS/SOCKS5 via `FETCHER_PROXY` env var or tool arguments.
+
 ## Quick Start
 
 Run directly with npx:
 
 ```bash
-npx -y fetcher-mcp
+npx -y @dy531014023/fetcher-mcp
 ```
 
 First time setup - install the required browser by running the following command in your terminal:
@@ -52,7 +56,7 @@ npx playwright install chromium
 Use the `--transport=http` parameter to start both Streamable HTTP endpoint and SSE endpoint services simultaneously:
 
 ```bash
-npx -y fetcher-mcp --log --transport=http --host=0.0.0.0 --port=3000
+npx -y @dy531014023/fetcher-mcp --log --transport=http --host=0.0.0.0 --port=3000
 ```
 
 After startup, the server provides the following endpoints:
@@ -67,7 +71,7 @@ Clients can choose which method to connect based on their needs.
 Run with the `--debug` option to show the browser window for debugging:
 
 ```bash
-npx -y fetcher-mcp --debug
+npx -y @dy531014023/fetcher-mcp --debug
 ```
 
 ## Configuration MCP
@@ -83,18 +87,36 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
   "mcpServers": {
     "fetcher": {
       "command": "npx",
-      "args": ["-y", "fetcher-mcp"]
+      "args": ["-y", "@dy531014023/fetcher-mcp"],
+      "env": {
+        "FETCHER_TIMEOUT": "30000",
+        "FETCHER_PROXY": "http://proxy-server:8080"
+      }
     }
   }
 }
 ```
+
+### Environment Variables
+
+All tool parameters can be configured via environment variables with `FETCHER_` prefix:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FETCHER_TIMEOUT` | Page loading timeout (ms) | 30000 |
+| `FETCHER_PROXY` | Proxy server URL | - |
+| `FETCHER_EXTRACT_CONTENT` | Extract main content | true |
+| `FETCHER_DISABLE_MEDIA` | Disable images/stylesheets | true |
+| `FETCHER_DEBUG` | Show browser window | false |
+
+**Priority**: Tool arguments > Environment variables > Default values
 
 ## Docker Deployment
 
 ### Running with Docker
 
 ```bash
-docker run -p 3000:3000 ghcr.io/jae-jae/fetcher-mcp:latest
+docker run -p 3000:3000 531014023/fetcher-mcp:0.4.1
 ```
 
 ### Deploying with Docker Compose
@@ -106,7 +128,7 @@ version: "3.8"
 
 services:
   fetcher-mcp:
-    image: ghcr.io/jae-jae/fetcher-mcp:latest
+    image: 531014023/fetcher-mcp:0.4.1
     container_name: fetcher-mcp
     restart: unless-stopped
     ports:
