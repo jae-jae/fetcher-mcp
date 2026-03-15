@@ -1,5 +1,5 @@
 {
-  "name": "@dy531014023/fetcher-mcp",
+  "name": "fetcher-mcp",
   "version": "0.4.1",
   "description": "MCP server for fetching web content using Playwright browser",
   "private": false,

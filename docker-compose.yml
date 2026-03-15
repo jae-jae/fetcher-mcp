@@ -2,21 +2,24 @@ version: "3.8"
 
 services:
   fetcher-mcp:
-    image: 531014023/fetcher-mcp:0.4.1
+    image: ghcr.io/jae-jae/fetcher-mcp:latest
     container_name: fetcher-mcp
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      # 在这里配置你的环境变量
       - FETCHER_TIMEOUT=30000
       - FETCHER_EXTRACT_CONTENT=true
       - FETCHER_DISABLE_MEDIA=true
       - FETCHER_DEBUG=false
-      # - FETCHER_PROXY=http://your-proxy:8080
+      # - FETCHER_PROXY=http://proxy-server:8080
+    # Using host network mode on Linux hosts can improve browser access efficiency
+    # network_mode: "host"
     volumes:
+      # For Playwright, may need to share certain system paths
       - /tmp:/tmp
+    # Health check
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
       interval: 30s
