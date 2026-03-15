@@ -20,18 +20,14 @@ MCP server for fetch web page content using Playwright headless browser.
 ## Advantages
 
 - **JavaScript Support**: Unlike traditional web scrapers, Fetcher MCP uses Playwright to execute JavaScript, making it capable of handling dynamic web content and modern web applications.
-
 - **Intelligent Content Extraction**: Built-in Readability algorithm automatically extracts the main content from web pages, removing ads, navigation, and other non-essential elements.
-
 - **Flexible Output Format**: Supports both HTML and Markdown output formats, making it easy to integrate with various downstream applications.
-
 - **Parallel Processing**: The `fetch_urls` tool enables concurrent fetching of multiple URLs, significantly improving efficiency for batch operations.
-
 - **Resource Optimization**: Automatically blocks unnecessary resources (images, stylesheets, fonts, media) to reduce bandwidth usage and improve performance.
-
 - **Robust Error Handling**: Comprehensive error handling and logging ensure reliable operation even when dealing with problematic web pages.
-
 - **Configurable Parameters**: Fine-grained control over timeouts, content extraction, and output formatting to suit different use cases.
+- **Environment Variable Configuration** (v0.4.0+): All parameters can be configured via environment variables with `FETCHER_` prefix, enabling flexible deployment in Docker and MCP configs.
+- **Proxy Support** (v0.4.0+): Built-in proxy support for HTTP/HTTPS/SOCKS5 via `FETCHER_PROXY` env var or tool arguments.
 
 ## Quick Start
 
@@ -83,11 +79,32 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
   "mcpServers": {
     "fetcher": {
       "command": "npx",
-      "args": ["-y", "fetcher-mcp"]
+      "args": ["-y", "fetcher-mcp"],
+      "env": {
+        "FETCHER_TIMEOUT": "30000",
+        "FETCHER_EXTRACT_CONTENT": "true",
+        "FETCHER_DISABLE_MEDIA": "true",
+        "FETCHER_DEBUG": "false",
+        "FETCHER_PROXY": "http://proxy-server:8080"
+      }
     }
   }
 }
 ```
+
+### Environment Variables
+
+All tool parameters can be configured via environment variables with `FETCHER_` prefix:
+
+| Variable                  | Description                | Default |
+| ------------------------- | -------------------------- | ------- |
+| `FETCHER_TIMEOUT`         | Page loading timeout (ms)  | 30000   |
+| `FETCHER_PROXY`           | Proxy server URL           | -       |
+| `FETCHER_EXTRACT_CONTENT` | Extract main content       | true    |
+| `FETCHER_DISABLE_MEDIA`   | Disable images/stylesheets | true    |
+| `FETCHER_DEBUG`           | Show browser window        | false   |
+
+**Priority**: Tool arguments > Environment variables > Default values
 
 ## Docker Deployment
 
@@ -113,6 +130,11 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - FETCHER_TIMEOUT=30000
+      - FETCHER_EXTRACT_CONTENT=true
+      - FETCHER_DISABLE_MEDIA=true
+      - FETCHER_DEBUG=false
+      # - FETCHER_PROXY=http://proxy-server:8080
     # Using host network mode on Linux hosts can improve browser access efficiency
     # network_mode: "host"
     volumes:
@@ -135,7 +157,6 @@ docker-compose up -d
 ## Features
 
 - `fetch_url` - Retrieve web page content from a specified URL
-
   - Uses Playwright headless browser to parse JavaScript
   - Supports intelligent extraction of main content and conversion to Markdown
   - Supports the following parameters:
@@ -149,16 +170,13 @@ docker-compose up -d
     - `navigationTimeout`: Maximum time to wait for additional navigation in milliseconds, default is 10000 (10 seconds)
     - `disableMedia`: Whether to disable media resources (images, stylesheets, fonts, media), default is true
     - `debug`: Whether to enable debug mode (showing browser window), overrides the --debug command line flag if specified
-
 - `fetch_urls` - Batch retrieve web page content from multiple URLs in parallel
   - Uses multi-tab parallel fetching for improved performance
   - Returns combined results with clear separation between webpages
   - Supports the following parameters:
     - `urls`: Array of URLs to fetch (required parameter)
     - Other parameters are the same as `fetch_url`
-
 - `browser_install` - Install Playwright Chromium browser binary automatically
-
   - Installs required Chromium browser binary when not available
   - Automatically suggested when browser installation errors occur
   - Supports the following parameters:
@@ -172,13 +190,10 @@ docker-compose up -d
 #### Dealing with Anti-Crawler Mechanisms
 
 - **Wait for Complete Loading**: For websites using CAPTCHA, redirects, or other verification mechanisms, include in your prompt:
-
   ```
   Please wait for the page to fully load
   ```
-
   This will use the `waitForNavigation: true` parameter.
-
 - **Increase Timeout Duration**: For websites that load slowly:
   ```
   Please set the page loading timeout to 60 seconds
@@ -188,21 +203,15 @@ docker-compose up -d
 #### Content Retrieval Adjustments
 
 - **Preserve Original HTML Structure**: When content extraction might fail:
-
   ```
   Please preserve the original HTML content
   ```
-
   Sets `extractContent: false` and `returnHtml: true`.
-
 - **Fetch Complete Page Content**: When extracted content is too limited:
-
   ```
   Please fetch the complete webpage content instead of just the main content
   ```
-
   Sets `extractContent: false`.
-
 - **Return Content as HTML**: When HTML format is needed instead of default Markdown:
   ```
   Please return the content in HTML format
@@ -222,19 +231,14 @@ docker-compose up -d
 #### Using Custom Cookies for Authentication
 
 - **Manual Login**: To login using your own credentials:
-
   ```
   Please run in debug mode so I can manually log in to the website
   ```
-
   Sets `debug: true` or uses the `--debug` flag, keeping the browser window open for manual login.
-
 - **Interacting with Debug Browser**: When debug mode is enabled:
-
   1. The browser window remains open
   2. You can manually log into the website using your credentials
   3. After login is complete, content will be fetched with your authenticated session
-
 - **Enable Debug for Specific Requests**: Even if the server is already running, you can enable debug mode for a specific request:
   ```
   Please enable debug mode for this authentication step
@@ -285,4 +289,4 @@ node build/index.js --debug
 
 Licensed under the [MIT License](https://choosealicense.com/licenses/mit/)
 
-[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
+[!\[Powered by DartNode\](https://dartnode.com/branding/DN-Open-Source-sm.png null)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")

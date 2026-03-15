@@ -9,8 +9,13 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-    # Using host network mode can improve browser access efficiency
-    # network_mode: "host" # Use on Linux hosts for better performance
+      - FETCHER_TIMEOUT=30000
+      - FETCHER_EXTRACT_CONTENT=true
+      - FETCHER_DISABLE_MEDIA=true
+      - FETCHER_DEBUG=false
+      # - FETCHER_PROXY=http://proxy-server:8080
+    # Using host network mode on Linux hosts can improve browser access efficiency
+    # network_mode: "host"
     volumes:
       # For Playwright, may need to share certain system paths
       - /tmp:/tmp
