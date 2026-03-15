@@ -182,7 +182,7 @@ export class BrowserService {
   public async createContext(browser: Browser): Promise<{ context: BrowserContext, viewport: {width: number, height: number} }> {
     const viewport = this.getRandomViewport();
     
-    const context = await browser.newContext({
+    const contextOptions: any = {
       javaScriptEnabled: true,
       ignoreHTTPSErrors: true,
       userAgent: this.getRandomUserAgent(),
@@ -207,7 +207,16 @@ export class BrowserService {
         'Sec-Fetch-User': '?1',
         'Cache-Control': 'max-age=0',
       }
-    });
+    };
+    
+    // Add proxy configuration if provided
+    if (this.options.proxy) {
+      contextOptions.proxy = {
+        server: this.options.proxy
+      };
+    }
+    
+    const context = await browser.newContext(contextOptions);
 
     // Set up anti-detection measures
     await this.setupAntiDetection(context);

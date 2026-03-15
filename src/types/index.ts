@@ -8,6 +8,7 @@ export interface FetchOptions {
     navigationTimeout: number;
     disableMedia: boolean;
     debug?: boolean;
+    proxy?: string;
   }
   
   export interface FetchResult {

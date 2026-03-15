@@ -31,6 +31,7 @@ class Logger {
 }
 
 // Create default logger instance
+// 支持命令行参数 --log 或环境变量 FETCHER_LOG=true
 export const logger = new Logger({
-  logMode: process.argv.includes("--log"),
+  logMode: process.argv.includes("--log") || process.env.FETCHER_LOG === "true",
 });

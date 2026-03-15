@@ -4,6 +4,7 @@ import { BrowserService } from "../services/browserService.js";
 import { FetchOptions } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 import { validateUrlProtocol } from "../utils/urlValidator.js";
+import { mergeConfig } from "../utils/config.js";
 
 /**
  * Tool definition for fetch_url
@@ -12,61 +13,66 @@ export const fetchUrlTool = {
   name: "fetch_url",
   description: "Retrieve web page content from a specified URL",
   inputSchema: {
-    type: "object",
-    properties: {
-      url: {
-        type: "string",
-        description:
-          "URL to fetch. Make sure to include the schema (http:// or https:// if not defined, preferring https for most cases)",
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description:
+            "URL to fetch. Make sure to include the schema (http:// or https:// if not defined, preferring https for most cases)",
+        },
+        timeout: {
+          type: "number",
+          description:
+            "Page loading timeout in milliseconds, default is 30000 (30 seconds)",
+        },
+        waitUntil: {
+          type: "string",
+          description:
+            "Specifies when navigation is considered complete, options: 'load', 'domcontentloaded', 'networkidle', 'commit', default is 'load'",
+        },
+        extractContent: {
+          type: "boolean",
+          description:
+            "Whether to intelligently extract the main content, default is true",
+        },
+        maxLength: {
+          type: "number",
+          description:
+            "Maximum length of returned content (in characters), default is no limit",
+        },
+        returnHtml: {
+          type: "boolean",
+          description:
+            "Whether to return HTML content instead of Markdown, default is false",
+        },
+        waitForNavigation: {
+          type: "boolean",
+          description:
+            "Whether to wait for additional navigation after initial page load (useful for sites with anti-bot verification), default is false",
+        },
+        navigationTimeout: {
+          type: "number",
+          description:
+            "Maximum time to wait for additional navigation in milliseconds, default is 10000 (10 seconds)",
+        },
+        disableMedia: {
+          type: "boolean",
+          description:
+            "Whether to disable media resources (images, stylesheets, fonts, media), default is true",
+        },
+        debug: {
+          type: "boolean",
+          description:
+            "Whether to enable debug mode (showing browser window), overrides the --debug command line flag if specified",
+        },
+        proxy: {
+          type: "string",
+          description:
+            "Proxy server URL to use for the request, e.g., http://localhost:8080 or socks5://localhost:1080",
+        },
       },
-      timeout: {
-        type: "number",
-        description:
-          "Page loading timeout in milliseconds, default is 30000 (30 seconds)",
-      },
-      waitUntil: {
-        type: "string",
-        description:
-          "Specifies when navigation is considered complete, options: 'load', 'domcontentloaded', 'networkidle', 'commit', default is 'load'",
-      },
-      extractContent: {
-        type: "boolean",
-        description:
-          "Whether to intelligently extract the main content, default is true",
-      },
-      maxLength: {
-        type: "number",
-        description:
-          "Maximum length of returned content (in characters), default is no limit",
-      },
-      returnHtml: {
-        type: "boolean",
-        description:
-          "Whether to return HTML content instead of Markdown, default is false",
-      },
-      waitForNavigation: {
-        type: "boolean",
-        description:
-          "Whether to wait for additional navigation after initial page load (useful for sites with anti-bot verification), default is false",
-      },
-      navigationTimeout: {
-        type: "number",
-        description:
-          "Maximum time to wait for additional navigation in milliseconds, default is 10000 (10 seconds)",
-      },
-      disableMedia: {
-        type: "boolean",
-        description:
-          "Whether to disable media resources (images, stylesheets, fonts, media), default is true",
-      },
-      debug: {
-        type: "boolean",
-        description:
-          "Whether to enable debug mode (showing browser window), overrides the --debug command line flag if specified",
-      },
+      required: ["url"],
     },
-    required: ["url"],
-  },
   annotations: {
     title: "Fetch URL",
     readOnlyHint: true,
@@ -86,21 +92,8 @@ export async function fetchUrl(args: any) {
   // Validate URL protocol for security (only allow HTTP and HTTPS)
   validateUrlProtocol(url);
 
-  const options: FetchOptions = {
-    timeout: Number(args?.timeout) || 30000,
-    waitUntil: String(args?.waitUntil || "load") as
-      | "load"
-      | "domcontentloaded"
-      | "networkidle"
-      | "commit",
-    extractContent: args?.extractContent !== false,
-    maxLength: Number(args?.maxLength) || 0,
-    returnHtml: args?.returnHtml === true,
-    waitForNavigation: args?.waitForNavigation === true,
-    navigationTimeout: Number(args?.navigationTimeout) || 10000,
-    disableMedia: args?.disableMedia !== false,
-    debug: args?.debug,
-  };
+  // Merge configuration from tool args and environment variables
+  const options: FetchOptions = mergeConfig(args);
 
   // Create browser service
   const browserService = new BrowserService(options);
