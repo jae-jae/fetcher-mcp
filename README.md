@@ -33,6 +33,10 @@ MCP server for fetch web page content using Playwright headless browser.
 
 - **Configurable Parameters**: Fine-grained control over timeouts, content extraction, and output formatting to suit different use cases.
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/jae-jae-fetcher-mcp).
+
 ## Quick Start
 
 Run directly with npx:
