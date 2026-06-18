@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { TransportProvider } from "./types.js";
 import { logger } from "../utils/logger.js";
+import { registerOpenApiRoutes } from "./openapi.js";
 
 /**
  * Check if a request is an initialization request
@@ -134,6 +135,9 @@ export class HttpTransportProvider implements TransportProvider {
       await this.handleSseMessageRequest(req, res);
     });
 
+    // OpenAPI REST routes
+    registerOpenApiRoutes(this.app);
+
     // Root path response
     this.app.get("/", (_req: Request, res: Response) => {
       res.send(`
@@ -146,6 +150,8 @@ export class HttpTransportProvider implements TransportProvider {
             <ul>
               <li><code>/mcp</code> - Streamable HTTP endpoint (modern MCP protocol)</li>
               <li><code>/sse</code> - SSE endpoint (legacy MCP protocol)</li>
+              <li><code>/openapi.json</code> - OpenAPI 3.1 specification</li>
+              <li><code>/tools/{name}</code> - REST tool endpoints</li>
             </ul>
           </body>
         </html>
