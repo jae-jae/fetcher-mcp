@@ -34,16 +34,20 @@ export class WebContentProcessor {
           
           // Try to retrieve page content
           try {
+            if (this.options.returnText) {
+              return await this.extractInnerText(page, url);
+            }
+
             // Directly get page information without waiting for page stability
             const { pageTitle, html } = await this.safelyGetPageInfo(page, url);
-            
+
             // If content is retrieved, process and return it
             if (html && html.trim().length > 0) {
               logger.info(`${this.logPrefix} Successfully retrieved content despite timeout, length: ${html.length}`);
-              
+
               const processedContent = await this.processContent(html, url);
               const formattedContent = `Title: ${pageTitle}\nURL: ${url}\nContent:\n\n${processedContent}`;
-              
+
               return {
                 success: true,
                 content: formattedContent,
@@ -101,7 +105,11 @@ export class WebContentProcessor {
 
       // Wait for the page to stabilize before getting content
       await this.ensurePageStability(page);
-      
+
+      if (this.options.returnText) {
+        return this.extractInnerText(page, url);
+      }
+
       // Safely retrieve page title and content
       const { pageTitle, html } = await this.safelyGetPageInfo(page, url);
 
@@ -204,6 +212,23 @@ export class WebContentProcessor {
     }
     
     return { pageTitle, html };
+  }
+
+  private async extractInnerText(page: any, url: string): Promise<FetchResult> {
+    const pageTitle = await page.title();
+    let text = await page.innerText('body');
+
+    logger.info(`${this.logPrefix} Retrieved innerText, length: ${text.length}`);
+
+    if (this.options.maxLength > 0 && text.length > this.options.maxLength) {
+      logger.info(
+        `${this.logPrefix} Content exceeds maximum length, will truncate to ${this.options.maxLength} characters`
+      );
+      text = text.substring(0, this.options.maxLength);
+    }
+
+    const formattedContent = `Title: ${pageTitle}\nURL: ${url}\nContent:\n\n${text}`;
+    return { success: true, content: formattedContent };
   }
 
   private async processContent(html: string, url: string): Promise<string> {

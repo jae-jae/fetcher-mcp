@@ -4,6 +4,7 @@ export interface FetchOptions {
     extractContent: boolean;
     maxLength: number;
     returnHtml: boolean;
+    returnText: boolean;
     waitForNavigation: boolean;
     navigationTimeout: number;
     disableMedia: boolean;
