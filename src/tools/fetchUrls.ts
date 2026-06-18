@@ -46,6 +46,11 @@ export const fetchUrlsTool = {
         description:
           "Whether to return HTML content instead of Markdown, default is false",
       },
+      returnText: {
+        type: "boolean",
+        description:
+          "Whether to return plain text (innerText) instead of Markdown. Skips content extraction and conversion entirely, returning only the visible text on the page. Default is false",
+      },
       waitForNavigation: {
         type: "boolean",
         description:
@@ -97,6 +102,7 @@ export async function fetchUrls(args: any) {
     extractContent: args?.extractContent !== false,
     maxLength: Number(args?.maxLength) || 0,
     returnHtml: args?.returnHtml === true,
+    returnText: args?.returnText === true,
     waitForNavigation: args?.waitForNavigation === true,
     navigationTimeout: Number(args?.navigationTimeout) || 10000,
     disableMedia: args?.disableMedia !== false,
