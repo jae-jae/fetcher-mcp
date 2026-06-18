@@ -22,18 +22,18 @@ function buildOpenApiSpec(publicUrl: string) {
         },
         responses: {
           "200": {
-            description: "Tool result.",
+            description: "The fetched content as markdown (or plain text when returnText is true).",
             content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ToolResult" },
+              "text/plain": {
+                schema: { type: "string" },
               },
             },
           },
           "500": {
             description: "Tool execution error.",
             content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ErrorResponse" },
+              "text/plain": {
+                schema: { type: "string" },
               },
             },
           },
@@ -41,32 +41,6 @@ function buildOpenApiSpec(publicUrl: string) {
       },
     };
   }
-
-  schemas["ToolResult"] = {
-    type: "object",
-    required: ["content"],
-    properties: {
-      content: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["type", "text"],
-          properties: {
-            type: { type: "string" },
-            text: { type: "string" },
-          },
-        },
-      },
-    },
-  };
-
-  schemas["ErrorResponse"] = {
-    type: "object",
-    required: ["error"],
-    properties: {
-      error: { type: "string" },
-    },
-  };
 
   return {
     openapi: "3.1.0",
@@ -92,10 +66,11 @@ export function registerOpenApiRoutes(app: any): void {
     app.post(`/tools/${tool.name}`, async (req: Request, res: Response) => {
       try {
         const result = await toolHandlers[tool.name](req.body);
-        res.json(result);
+        const text = result?.content?.[0]?.text ?? "";
+        res.type("text/plain").send(text);
       } catch (error: any) {
         logger.error(`[OpenAPI] /tools/${tool.name} failed: ${error.message}`);
-        res.status(500).json({ error: error.message });
+        res.status(500).type("text/plain").send(error.message);
       }
     });
   }
