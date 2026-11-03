@@ -6,7 +6,7 @@
  * Supports Stdio and HTTP/SSE transport protocols
  */
 
-import { getConfig, isDebugMode } from "./config/index.js";
+import { describeProxy, getConfig, isDebugMode, ProxyConfigError } from "./config/index.js";
 import { createTransportProvider } from "./transports/index.js";
 import { startServer } from "./server.js";
 import { logger } from "./utils/logger.js";
@@ -24,8 +24,18 @@ async function main() {
   }
 
   try {
-    // Get configuration
+    // Get configuration. Invalid FETCHER_PROXY throws before the server listens.
     const config = getConfig();
+
+    if (config.proxy) {
+      // stderr, not the MCP stdout stream. The line never includes credentials.
+      console.error(`[fetcher-mcp] ${describeProxy(config.proxy)}`);
+      if (config.proxy.bypass?.split(",").includes("*")) {
+        console.error(
+          '[fetcher-mcp] Warning: proxy bypass includes "*", so matching requests are sent directly instead of through FETCHER_PROXY. URL validation still applies.'
+        );
+      }
+    }
 
     // Create transport provider
     const transportProvider = createTransportProvider(config.transport);
@@ -53,9 +63,13 @@ async function main() {
       logger.info("[Setup] Using standard input/output (stdio) transport");
     }
   } catch (error: any) {
-    logger.error(`[Error] Server error: ${error.message}`);
-    if (error.stack) {
-      logger.debug(error.stack);
+    if (error instanceof ProxyConfigError) {
+      console.error(error.message);
+    } else {
+      logger.error(`[Error] Server error: ${error.message}`);
+      if (error.stack) {
+        logger.debug(error.stack);
+      }
     }
     process.exit(1);
   }

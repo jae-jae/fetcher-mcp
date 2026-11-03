@@ -87,11 +87,52 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
   "mcpServers": {
     "fetcher": {
       "command": "npx",
-      "args": ["-y", "fetcher-mcp"]
+      "args": ["-y", "fetcher-mcp"],
+      "env": {
+        "FETCHER_PROXY": "http://proxy.example.com:8080"
+      }
     }
   }
 }
 ```
+
+## Proxy
+
+Send browser traffic through an HTTP, HTTPS, or SOCKS5 proxy by setting `FETCHER_PROXY`. The proxy is process configuration. `fetch_url`, `fetch_urls`, `browser_install`, and the REST `POST /tools/{name}` endpoints do not accept a proxy parameter, so a caller or a prompt cannot select a different proxy.
+
+```bash
+FETCHER_PROXY=http://proxy.example.com:8080 npx -y fetcher-mcp
+```
+
+HTTP and HTTPS proxies may include a username and password. URL-encode reserved characters (`@` as `%40`, `:` as `%3A`, and a literal `%` as `%25`):
+
+```bash
+FETCHER_PROXY='http://user:p%40ssword@proxy.example.com:3128' npx -y fetcher-mcp
+```
+
+| Variable | Description |
+| --- | --- |
+| `FETCHER_PROXY` | `http://host:port`, `https://host:port`, or `socks5://host:port`. Optional `username:password@` for HTTP and HTTPS. Unset or blank means a direct connection, the same behavior as when this option is not used. |
+| `FETCHER_PROXY_BYPASS` | Optional hosts Chromium connects to directly (Playwright's `bypass`). Comma- or space-separated. When this variable is set, including to an empty value, it replaces `NO_PROXY` and `no_proxy`. |
+| `NO_PROXY`, `no_proxy` | Bypass list used only when `FETCHER_PROXY_BYPASS` is unset. Ignored when `FETCHER_PROXY` is unset. |
+
+Bypass entries may be hostnames (`example.com`), domain suffixes (`.example.com` or `*.example.com`), IP addresses, CIDR ranges (`10.0.0.0/8`), `*`, `<local>`, or `<-loopback>`. A trailing `:port` on a hostname or IPv4 address is removed, because Chromium matches hosts rather than host-port pairs.
+
+Chromium does not support SOCKS5 username/password authentication. Playwright rejects that combination (`Browser does not support socks5 proxy authentication`) instead of opening the connection without the credentials. fetcher-mcp rejects `socks5://user:password@host:port` at startup, before it listens or launches a browser. For a proxy that requires authentication, use `http://` or `https://`. Alternatively, point `FETCHER_PROXY` at a local SOCKS5 listener that does not require authentication and that holds the upstream credentials itself. Unauthenticated `socks5://host:port` is supported. Playwright sends target hostnames to that proxy for DNS (remote resolution) rather than resolving them locally.
+
+An invalid `FETCHER_PROXY` stops the process at startup. The stderr message describes the problem and does not include the password. The process does not fall back to a direct connection. Checked failures include an unknown scheme, a missing port, a path, query, or fragment, invalid percent-encoding, a password without a username, and SOCKS5 credentials.
+
+The proxy address itself may be a loopback or private address, for example `http://127.0.0.1:8888`. The request URL validator does not apply to it, because only the operator can set it. Startup prints one stderr line, `[fetcher-mcp] Using proxy http://host:port`, and adds `(authentication configured)` when a username is present. The username and password are not printed. Playwright supplies the password to Chromium as proxy authentication, not as part of the `--proxy-server` command-line flag. On Chromium, Playwright also installs those credentials as HTTP authentication with no origin limit, so a page that returns 401 can receive the proxy username and password. Prefer an unauthenticated proxy when the fetched pages are untrusted.
+
+### Proxy and internal-address blocking
+
+`fetch_url` and `fetch_urls` run the same URL checks as a direct connection before a browser is launched and before navigation. A configured proxy does not skip those checks. Targets such as `127.0.0.1`, `localhost`, `169.254.169.254`, other private and reserved addresses, and the blocked hostnames are still rejected when `FETCHER_PROXY` is set, including when the bypass list would have contacted that host directly.
+
+With an HTTP or HTTPS proxy, Chromium forwards the target URL to the proxy and the proxy resolves DNS. The browser resolves only the proxy host. With SOCKS5, Playwright forces remote DNS, so the proxy resolves the target hostname and the browser resolves only the proxy host. A bypass entry is the exception: Chromium connects to that host directly and resolves it locally. Playwright also adds `<-loopback>`, which disables Chromium's implicit rule that skips the proxy for loopback, so loopback targets use the proxy unless the bypass list names them. Listing them in the bypass list still does not fetch them: the URL check rejects those targets before navigation.
+
+`FETCHER_MCP_ALLOW_PRIVATE_IPS=true` still turns the block off, with or without a proxy. Requests that pass the check then use the proxy unless they match the bypass list.
+
+Two gaps already exist without a proxy, and a proxy changes which network they reach. Hostnames that are not on the block list are not looked up before the fetch, and redirects are not checked again. Through a proxy, a name that resolves to a private address, or a redirect to an address such as `169.254.169.254`, is contacted from the proxy's network (for example the proxy host's link-local metadata address) rather than from the machine running fetcher-mcp. A bypass entry for that host sends the connection directly from the fetcher host instead.
 
 ## Docker Deployment
 
@@ -117,6 +158,8 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      # - FETCHER_PROXY=http://proxy.example.com:8080
+      # - FETCHER_PROXY_BYPASS=localhost,.internal.example
     # Using host network mode on Linux hosts can improve browser access efficiency
     # network_mode: "host"
     volumes:
@@ -222,7 +265,7 @@ docker-compose up -d
 
 ### Request targets
 
-`fetch_url` and `fetch_urls` accept only `http:` and `https:` URLs. Loopback, private, link-local, and cloud-metadata targets are blocked by default, including numeric IP spellings (decimal, hex, octal, and short forms) and names such as `localhost` and `metadata.google.internal`. Set `FETCHER_MCP_ALLOW_PRIVATE_IPS=true` to allow those targets, including blocked hostnames.
+`fetch_url` and `fetch_urls` accept only `http:` and `https:` URLs. Loopback, private, link-local, and cloud-metadata targets are blocked by default, including numeric IP spellings (decimal, hex, octal, and short forms) and names such as `localhost` and `metadata.google.internal`. Set `FETCHER_MCP_ALLOW_PRIVATE_IPS=true` to allow those targets, including blocked hostnames. A proxy set with `FETCHER_PROXY` does not skip these checks. See [Proxy](#proxy).
 
 A hostname that is not itself on the block list is not looked up before the browser fetches it, and redirects are not checked again. A name that resolves to a private address, or a redirect onto an internal address, can still reach that address.
 

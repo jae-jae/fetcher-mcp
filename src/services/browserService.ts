@@ -1,6 +1,7 @@
-import { Browser, BrowserContext, Page, chromium } from "playwright";
+import { Browser, BrowserContext, Page, chromium, type LaunchOptions } from "playwright";
 import { logger } from "../utils/logger.js";
 import { FetchOptions } from "../types/index.js";
+import { parseProxySettings, redactProxySecrets, toPlaywrightProxy } from "../config/proxy.js";
 
 /**
  * Service for managing browser instances with anti-detection features
@@ -132,23 +133,33 @@ export class BrowserService {
    */
   public async createBrowser(): Promise<Browser> {
     const viewport = this.getRandomViewport();
+    // Operator proxy only. Absent when FETCHER_PROXY is unset, so launch options
+    // match a direct connection. Tool arguments are not consulted.
+    const proxySettings = parseProxySettings(process.env);
+    const launchOptions: LaunchOptions = {
+      headless: !this.isDebugMode,
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-webgl',
+        '--disable-infobars',
+        '--window-size=' + viewport.width + ',' + viewport.height,
+        '--disable-extensions'
+      ]
+    };
+    if (proxySettings) {
+      launchOptions.proxy = toPlaywrightProxy(proxySettings);
+    }
 
     try {
-      return await chromium.launch({
-        headless: !this.isDebugMode,
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-webgl',
-          '--disable-infobars',
-          '--window-size=' + viewport.width + ',' + viewport.height,
-          '--disable-extensions'
-        ]
-      });
+      return await chromium.launch(launchOptions);
     } catch (error: any) {
+      if (proxySettings?.password && typeof error?.message === "string") {
+        error.message = redactProxySecrets(error.message, proxySettings);
+      }
       // Check if the error is related to missing browser installation
       if (this.isBrowserNotInstalledError(error)) {
         const enhancedError = new Error(
