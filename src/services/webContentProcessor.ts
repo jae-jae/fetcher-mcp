@@ -107,7 +107,8 @@ export class WebContentProcessor {
       await this.ensurePageStability(page);
 
       if (this.options.returnText) {
-        return this.extractInnerText(page, url);
+        // Await so extraction errors reach the catch below and remain per-page failures.
+        return await this.extractInnerText(page, url);
       }
 
       // Safely retrieve page title and content
