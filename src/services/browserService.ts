@@ -1,6 +1,7 @@
 import { Browser, BrowserContext, Page, chromium } from "playwright";
 import { logger } from "../utils/logger.js";
 import { FetchOptions } from "../types/index.js";
+import { canonicalHostname, isBlockedRequestHost } from "../utils/urlValidator.js";
 
 /**
  * Service for managing browser instances with anti-detection features
@@ -128,6 +129,40 @@ export class BrowserService {
   }
 
   /**
+   * Install an egress guard that re-validates EVERY request the page makes — the initial navigation,
+   * HTTP redirects, and subresources (images, scripts, iframes, fetch/XHR) — against the same SSRF
+   * host rules the input-time validator uses. This closes two gaps a one-shot check on the input URL
+   * cannot cover: a public URL that 3xx-redirects to an internal address (e.g. the cloud metadata
+   * endpoint), and a subresource/iframe pointed at one. DNS names are resolved and every resolved
+   * address is checked here too. No-op when FETCHER_MCP_ALLOW_PRIVATE_IPS is set, because
+   * isBlockedRequestHost short-circuits to false.
+   *
+   * Registered after the media handler so it runs first (Playwright invokes route handlers LIFO); it
+   * aborts blocked requests and otherwise defers via route.fallback() to any remaining handler.
+   */
+  private async setupSsrfGuard(context: BrowserContext): Promise<void> {
+    await context.route("**/*", async (route) => {
+      let host: string;
+      try {
+        host = canonicalHostname(new URL(route.request().url()).hostname);
+      } catch {
+        // Non-network schemes (data:, blob:, about:) have no host to validate.
+        await route.fallback();
+        return;
+      }
+      if (host && (await isBlockedRequestHost(host))) {
+        logger.error(
+          `SSRF egress guard blocked request to "${host}" (${route.request().url()})`
+        );
+        await route.abort("blockedbyclient");
+        return;
+      }
+      // Defer to any other registered handler (e.g. media filtering); the request continues if none.
+      await route.fallback();
+    });
+  }
+
+  /**
    * Create a new stealth browser instance
    */
   public async createBrowser(): Promise<Browser> {
@@ -211,10 +246,13 @@ export class BrowserService {
 
     // Set up anti-detection measures
     await this.setupAntiDetection(context);
-    
+
     // Configure media handling
     await this.setupMediaHandling(context);
-    
+
+    // SSRF egress guard — re-validate redirects/subresources (registered last so it runs first).
+    await this.setupSsrfGuard(context);
+
     return { context, viewport };
   }
 

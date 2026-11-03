@@ -1,4 +1,5 @@
 import net from "node:net";
+import { lookup } from "node:dns/promises";
 import { logger } from "./logger.js";
 
 /**
@@ -24,7 +25,7 @@ const ALLOWED_PROTOCOLS = ["http:", "https:"];
  * legitimately fetch internal hosts can set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to disable both checks.
  * The variable is read on each validation so a process can change it without a restart.
  */
-function allowPrivateIps(): boolean {
+export function allowPrivateIps(): boolean {
   return /^(1|true|yes)$/i.test(process.env.FETCHER_MCP_ALLOW_PRIVATE_IPS ?? "");
 }
 
@@ -145,12 +146,74 @@ function isBlockedLiteralAddress(host: string): boolean {
  * Hostname as used for the block checks: brackets removed, lowercased, and a trailing
  * DNS root dot stripped so `localhost.` cannot bypass the hostname list.
  */
-function canonicalHostname(hostname: string): string {
+export function canonicalHostname(hostname: string): string {
   return hostname
     .replace(/^\[/, "")
     .replace(/\]$/, "")
     .toLowerCase()
     .replace(/\.+$/, "");
+}
+
+/**
+ * Reason string when [hostname] is a blocked destination by its LITERAL form — the loopback/metadata
+ * hostname list, or a private/reserved address in any of the numeric/mapped notations — or null when
+ * it is allowed. Honours the FETCHER_MCP_ALLOW_PRIVATE_IPS opt-out (returns null when it is set).
+ * Shared by the input-time check and the egress guard so both apply exactly the same rules.
+ */
+export function blockedLiteralReason(hostname: string): string | null {
+  if (allowPrivateIps()) {
+    return null;
+  }
+  const host = canonicalHostname(hostname);
+  if (BLOCKED_HOSTNAMES.has(host) || host.endsWith(".localhost")) {
+    return `URL host "${host}" is not allowed (loopback/internal). Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`;
+  }
+  if (isBlockedLiteralAddress(host)) {
+    return (
+      `URL host "${host}" resolves to a private or reserved address (SSRF protection). ` +
+      `Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
+    );
+  }
+  return null;
+}
+
+/**
+ * True when [hostname] must be refused as a request destination, resolving DNS names so that a public
+ * name pointing at a private address (classic SSRF-via-DNS) is also caught. Literal/numeric hosts are
+ * decided synchronously by {@link blockedLiteralReason}; a genuine DNS name is resolved and EVERY
+ * A/AAAA record is checked against the blocked ranges. Honours the FETCHER_MCP_ALLOW_PRIVATE_IPS opt-out.
+ *
+ * NOTE: this validates the resolved address but does not PIN it for the connection that follows, so a
+ * fast DNS-rebinding attacker can still race the check (the name re-resolving to a private address
+ * between this lookup and the browser's own connect). Fully closing that needs connection-level pinning
+ * — Chromium `--host-resolver-rules` or an egress proxy — which is a larger change; see the PR notes.
+ */
+export async function isBlockedRequestHost(hostname: string): Promise<boolean> {
+  if (allowPrivateIps()) {
+    return false;
+  }
+  const host = canonicalHostname(hostname);
+  if (!host) {
+    return false;
+  }
+  if (blockedLiteralReason(host)) {
+    return true;
+  }
+  // Already a literal address in some notation: the synchronous check above is authoritative, and a
+  // DNS lookup of an IP literal is meaningless.
+  if (net.isIP(host) || normalizeNumericIpv4(host) || ipv4FromMappedIpv6(host)) {
+    return false;
+  }
+  try {
+    const records = await lookup(host, { all: true });
+    return records.some((r) =>
+      BLOCKED_RANGES.check(r.address, r.family === 6 ? "ipv6" : "ipv4")
+    );
+  } catch {
+    // Unresolvable name: the browser cannot reach a private address through it either, and a transient
+    // DNS error should not become a hard fetch failure. The literal check above has already run.
+    return false;
+  }
 }
 
 /**
@@ -190,22 +253,14 @@ export function validateUrlProtocol(url: string): string {
   }
 
   // SSRF protection: reject loopback / private / link-local / metadata destinations (default-deny).
-  // FETCHER_MCP_ALLOW_PRIVATE_IPS covers literal addresses and blocked hostnames.
-  const host = canonicalHostname(parsedUrl.hostname);
-  if (!allowPrivateIps()) {
-    if (BLOCKED_HOSTNAMES.has(host) || host.endsWith(".localhost")) {
-      logger.error(`Blocked URL targeting a disallowed host: ${host} (URL: ${trimmedUrl})`);
-      throw new URLSecurityError(
-        `URL host "${host}" is not allowed (loopback/internal). Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
-      );
-    }
-    if (isBlockedLiteralAddress(host)) {
-      logger.error(`Blocked URL targeting a private/reserved address: ${host} (URL: ${trimmedUrl})`);
-      throw new URLSecurityError(
-        `URL host "${host}" resolves to a private or reserved address (SSRF protection). ` +
-          `Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
-      );
-    }
+  // FETCHER_MCP_ALLOW_PRIVATE_IPS covers literal addresses and blocked hostnames. The same rules are
+  // re-applied to every request (redirects, subresources) by the egress guard in BrowserService.
+  const reason = blockedLiteralReason(parsedUrl.hostname);
+  if (reason) {
+    logger.error(
+      `Blocked URL targeting a disallowed host: ${canonicalHostname(parsedUrl.hostname)} (URL: ${trimmedUrl})`
+    );
+    throw new URLSecurityError(reason);
   }
 
   logger.debug(`URL validation passed: ${trimmedUrl}`);
