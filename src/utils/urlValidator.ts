@@ -20,16 +20,20 @@ const ALLOWED_PROTOCOLS = ["http:", "https:"];
  * SSRF protection — opt-out for trusted internal use.
  *
  * By default, requests to loopback / private / link-local / reserved addresses (including the cloud
- * metadata endpoint 169.254.169.254) are rejected. Operators who legitimately fetch internal hosts can
- * set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to disable this check.
+ * metadata endpoint 169.254.169.254) and to loopback/metadata hostnames are rejected. Operators who
+ * legitimately fetch internal hosts can set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to disable both checks.
+ * The variable is read on each validation so a process can change it without a restart.
  */
-const ALLOW_PRIVATE_IPS = /^(1|true|yes)$/i.test(
-  process.env.FETCHER_MCP_ALLOW_PRIVATE_IPS ?? ""
-);
+function allowPrivateIps(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.FETCHER_MCP_ALLOW_PRIVATE_IPS ?? "");
+}
 
 /** Hostnames that must never be targeted (bypass IP checks via name resolution). */
 const BLOCKED_HOSTNAMES = new Set([
   "localhost",
+  "localhost.localdomain",
+  "ip6-localhost",
+  "ip6-loopback",
   "metadata.google.internal",
   "metadata",
   "instance-data",
@@ -85,11 +89,49 @@ function normalizeNumericIpv4(host: string): string | null {
   ].join(".");
 }
 
-/** True when [host] resolves to a literal address in a blocked (private/reserved/loopback) range. */
+/**
+ * Decode the two trailing hextets of an IPv4-mapped IPv6 address into a dotted IPv4 string.
+ * `7f00` + `0001` -> `127.0.0.1`.
+ */
+function ipv4FromHexGroups(hi: string, lo: string): string | null {
+  if (!/^[0-9a-f]{1,4}$/i.test(hi) || !/^[0-9a-f]{1,4}$/i.test(lo)) {
+    return null;
+  }
+  const high = parseInt(hi, 16);
+  const low = parseInt(lo, 16);
+  return [
+    (high >>> 8) & 0xff,
+    high & 0xff,
+    (low >>> 8) & 0xff,
+    low & 0xff,
+  ].join(".");
+}
+
+/**
+ * Node's WHATWG URL parser rewrites IPv4-mapped IPv6 to `::ffff:hhhh:hhhh`
+ * (`[::ffff:127.0.0.1]` becomes `::ffff:7f00:1`). A dotted-quad strip of the
+ * `::ffff:` prefix does not see that form, so the embedded IPv4 is decoded here.
+ * The dotted form is still accepted in case a caller bypasses URL canonicalization.
+ */
+function ipv4FromMappedIpv6(host: string): string | null {
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (hex) {
+    return ipv4FromHexGroups(hex[1], hex[2]);
+  }
+  const dotted = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(host);
+  if (dotted && net.isIPv4(dotted[1])) {
+    return dotted[1];
+  }
+  return null;
+}
+
+/** True when [host] is a literal address in a blocked (private/reserved/loopback) range. */
 function isBlockedLiteralAddress(host: string): boolean {
-  // IPv4-mapped IPv6 (::ffff:127.0.0.1) — check the embedded IPv4.
-  const mapped = host.replace(/^::ffff:/i, "");
-  const ipv4 = net.isIPv4(mapped) ? mapped : normalizeNumericIpv4(host);
+  const mappedIpv4 = ipv4FromMappedIpv6(host);
+  if (mappedIpv4) {
+    return BLOCKED_RANGES.check(mappedIpv4, "ipv4");
+  }
+  const ipv4 = net.isIPv4(host) ? host : normalizeNumericIpv4(host);
   if (ipv4) {
     return BLOCKED_RANGES.check(ipv4, "ipv4");
   }
@@ -97,6 +139,18 @@ function isBlockedLiteralAddress(host: string): boolean {
     return BLOCKED_RANGES.check(host, "ipv6");
   }
   return false;
+}
+
+/**
+ * Hostname as used for the block checks: brackets removed, lowercased, and a trailing
+ * DNS root dot stripped so `localhost.` cannot bypass the hostname list.
+ */
+function canonicalHostname(hostname: string): string {
+  return hostname
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .toLowerCase()
+    .replace(/\.+$/, "");
 }
 
 /**
@@ -136,19 +190,22 @@ export function validateUrlProtocol(url: string): string {
   }
 
   // SSRF protection: reject loopback / private / link-local / metadata destinations (default-deny).
-  const host = parsedUrl.hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
-  if (BLOCKED_HOSTNAMES.has(host) || host.endsWith(".localhost")) {
-    logger.error(`Blocked URL targeting a disallowed host: ${host} (URL: ${trimmedUrl})`);
-    throw new URLSecurityError(
-      `URL host "${host}" is not allowed (loopback/internal). Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
-    );
-  }
-  if (!ALLOW_PRIVATE_IPS && isBlockedLiteralAddress(host)) {
-    logger.error(`Blocked URL targeting a private/reserved address: ${host} (URL: ${trimmedUrl})`);
-    throw new URLSecurityError(
-      `URL host "${host}" resolves to a private or reserved address (SSRF protection). ` +
-        `Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
-    );
+  // FETCHER_MCP_ALLOW_PRIVATE_IPS covers literal addresses and blocked hostnames.
+  const host = canonicalHostname(parsedUrl.hostname);
+  if (!allowPrivateIps()) {
+    if (BLOCKED_HOSTNAMES.has(host) || host.endsWith(".localhost")) {
+      logger.error(`Blocked URL targeting a disallowed host: ${host} (URL: ${trimmedUrl})`);
+      throw new URLSecurityError(
+        `URL host "${host}" is not allowed (loopback/internal). Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
+      );
+    }
+    if (isBlockedLiteralAddress(host)) {
+      logger.error(`Blocked URL targeting a private/reserved address: ${host} (URL: ${trimmedUrl})`);
+      throw new URLSecurityError(
+        `URL host "${host}" resolves to a private or reserved address (SSRF protection). ` +
+          `Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
+      );
+    }
   }
 
   logger.debug(`URL validation passed: ${trimmedUrl}`);
