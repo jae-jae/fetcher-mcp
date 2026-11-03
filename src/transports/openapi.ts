@@ -1,6 +1,12 @@
+import { createRequire } from "node:module";
 import { Request, Response } from "express";
 import { tools, toolHandlers } from "../tools/index.js";
 import { logger } from "../utils/logger.js";
+
+const require = createRequire(import.meta.url);
+const { version: packageVersion } = require("../../package.json") as {
+  version: string;
+};
 
 function buildOpenApiSpec(publicUrl: string) {
   const paths: Record<string, any> = {};
@@ -46,9 +52,10 @@ function buildOpenApiSpec(publicUrl: string) {
     openapi: "3.1.0",
     info: {
       title: "Fetcher MCP",
-      version: "0.1.0",
+      version: packageVersion,
       description:
-        "Web content fetching tools. This server also speaks MCP over Streamable HTTP at POST /mcp.",
+        "Web content fetching tools. This server also speaks MCP over Streamable HTTP at POST /mcp. " +
+        "These REST endpoints have no authentication (including browser_install) and must only be exposed on localhost or a trusted internal network.",
     },
     servers: [{ url: publicUrl }],
     paths,

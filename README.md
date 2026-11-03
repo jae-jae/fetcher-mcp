@@ -59,8 +59,12 @@ After startup, the server provides the following endpoints:
 
 - `/mcp` - Streamable HTTP endpoint (modern MCP protocol)
 - `/sse` - SSE endpoint (legacy MCP protocol)
+- `/openapi.json` - OpenAPI 3.1 specification for the REST tool API (HTTP mode only)
+- `POST /tools/{name}` - REST endpoint for each tool (`fetch_url`, `fetch_urls`, `browser_install`)
 
-Clients can choose which method to connect based on their needs.
+Clients can choose which method to connect based on their needs. Stdio mode does not serve the HTTP, SSE, or REST routes.
+
+> **No authentication.** `/openapi.json` and `POST /tools/{name}` do not authenticate callers. That includes `browser_install`, which installs a browser on the host. Use these endpoints only on localhost or a trusted internal network. Do not expose them on an untrusted network (for example by binding `--host=0.0.0.0` where the port is reachable from outside that network).
 
 ### Debug Mode
 
@@ -145,6 +149,7 @@ docker-compose up -d
     - `extractContent`: Whether to intelligently extract the main content, default is true
     - `maxLength`: Maximum length of returned content (in characters), default is no limit
     - `returnHtml`: Whether to return HTML content instead of Markdown, default is false
+    - `returnText`: Whether to return plain text (`innerText` of the page body) instead of Markdown. Skips Readability extraction and Markdown conversion. Default is false. When omitted, the response is the same Markdown output as before
     - `waitForNavigation`: Whether to wait for additional navigation after initial page load (useful for sites with anti-bot verification), default is false
     - `navigationTimeout`: Maximum time to wait for additional navigation in milliseconds, default is 10000 (10 seconds)
     - `disableMedia`: Whether to disable media resources (images, stylesheets, fonts, media), default is true
@@ -208,6 +213,18 @@ docker-compose up -d
   Please return the content in HTML format
   ```
   Sets `returnHtml: true`.
+
+- **Return Visible Text Only**: When Markdown markup is unnecessary:
+  ```
+  Please return only the visible text
+  ```
+  Sets `returnText: true`.
+
+### Request targets
+
+`fetch_url` and `fetch_urls` accept only `http:` and `https:` URLs. Loopback, private, link-local, and cloud-metadata targets are blocked by default, including numeric IP spellings (decimal, hex, octal, and short forms) and names such as `localhost` and `metadata.google.internal`. Set `FETCHER_MCP_ALLOW_PRIVATE_IPS=true` to allow those targets, including blocked hostnames.
+
+A hostname that is not itself on the block list is not looked up before the browser fetches it, and redirects are not checked again. A name that resolves to a private address, or a redirect onto an internal address, can still reach that address.
 
 ### Debugging and Authentication
 
