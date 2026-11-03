@@ -47,6 +47,8 @@ async function main() {
         "[Setup] - /mcp - Streamable HTTP endpoint (modern MCP protocol)"
       );
       logger.info("[Setup] - /sse - SSE endpoint (legacy MCP protocol)");
+      logger.info("[Setup] - /openapi.json - OpenAPI 3.1 specification");
+      logger.info("[Setup] - /tools/{name} - REST tool endpoints");
     } else {
       logger.info("[Setup] Using standard input/output (stdio) transport");
     }

@@ -1,3 +1,4 @@
+import net from "node:net";
 import { logger } from "./logger.js";
 
 /**
@@ -14,6 +15,143 @@ export class URLSecurityError extends Error {
  * Allowed URL protocols for security
  */
 const ALLOWED_PROTOCOLS = ["http:", "https:"];
+
+/**
+ * SSRF protection — opt-out for trusted internal use.
+ *
+ * By default, requests to loopback / private / link-local / reserved addresses (including the cloud
+ * metadata endpoint 169.254.169.254) and to loopback/metadata hostnames are rejected. Operators who
+ * legitimately fetch internal hosts can set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to disable both checks.
+ * The variable is read on each validation so a process can change it without a restart.
+ */
+function allowPrivateIps(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.FETCHER_MCP_ALLOW_PRIVATE_IPS ?? "");
+}
+
+/** Hostnames that must never be targeted (bypass IP checks via name resolution). */
+const BLOCKED_HOSTNAMES = new Set([
+  "localhost",
+  "localhost.localdomain",
+  "ip6-localhost",
+  "ip6-loopback",
+  "metadata.google.internal",
+  "metadata",
+  "instance-data",
+]);
+
+/** Private / reserved IP ranges that are not allowed as request destinations. */
+const BLOCKED_RANGES = new net.BlockList();
+for (const [addr, prefix] of [
+  ["0.0.0.0", 8], // "this" network
+  ["10.0.0.0", 8], // RFC 1918 private
+  ["100.64.0.0", 10], // CGNAT
+  ["127.0.0.0", 8], // loopback
+  ["169.254.0.0", 16], // link-local (cloud metadata lives here)
+  ["172.16.0.0", 12], // RFC 1918 private
+  ["192.0.0.0", 24], // IETF protocol assignments
+  ["192.168.0.0", 16], // RFC 1918 private
+  ["198.18.0.0", 15], // benchmarking
+  ["224.0.0.0", 4], // multicast
+  ["240.0.0.0", 4], // reserved
+] as Array<[string, number]>) {
+  BLOCKED_RANGES.addSubnet(addr, prefix, "ipv4");
+}
+for (const [addr, prefix] of [
+  ["::1", 128], // loopback
+  ["::", 128], // unspecified
+  ["fc00::", 7], // unique local
+  ["fe80::", 10], // link-local
+] as Array<[string, number]>) {
+  BLOCKED_RANGES.addSubnet(addr, prefix, "ipv6");
+}
+
+/**
+ * Normalise the numeric host notations that browsers/libcurl accept but that `net.isIP` rejects, so a
+ * decimal/hex integer form of a private address cannot bypass the range check:
+ *   2130706433 -> 127.0.0.1, 0x7f000001 -> 127.0.0.1
+ * Returns a canonical dotted-quad IPv4 string, or null when the host is not an unambiguous numeric IP.
+ */
+function normalizeNumericIpv4(host: string): string | null {
+  let value: number | null = null;
+  if (/^[0-9]+$/.test(host)) {
+    value = Number(host);
+  } else if (/^0x[0-9a-f]+$/i.test(host)) {
+    value = parseInt(host, 16);
+  }
+  if (value === null || !Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+    return null;
+  }
+  return [
+    (value >>> 24) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 8) & 0xff,
+    value & 0xff,
+  ].join(".");
+}
+
+/**
+ * Decode the two trailing hextets of an IPv4-mapped IPv6 address into a dotted IPv4 string.
+ * `7f00` + `0001` -> `127.0.0.1`.
+ */
+function ipv4FromHexGroups(hi: string, lo: string): string | null {
+  if (!/^[0-9a-f]{1,4}$/i.test(hi) || !/^[0-9a-f]{1,4}$/i.test(lo)) {
+    return null;
+  }
+  const high = parseInt(hi, 16);
+  const low = parseInt(lo, 16);
+  return [
+    (high >>> 8) & 0xff,
+    high & 0xff,
+    (low >>> 8) & 0xff,
+    low & 0xff,
+  ].join(".");
+}
+
+/**
+ * Node's WHATWG URL parser rewrites IPv4-mapped IPv6 to `::ffff:hhhh:hhhh`
+ * (`[::ffff:127.0.0.1]` becomes `::ffff:7f00:1`). A dotted-quad strip of the
+ * `::ffff:` prefix does not see that form, so the embedded IPv4 is decoded here.
+ * The dotted form is still accepted in case a caller bypasses URL canonicalization.
+ */
+function ipv4FromMappedIpv6(host: string): string | null {
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (hex) {
+    return ipv4FromHexGroups(hex[1], hex[2]);
+  }
+  const dotted = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(host);
+  if (dotted && net.isIPv4(dotted[1])) {
+    return dotted[1];
+  }
+  return null;
+}
+
+/** True when [host] is a literal address in a blocked (private/reserved/loopback) range. */
+function isBlockedLiteralAddress(host: string): boolean {
+  const mappedIpv4 = ipv4FromMappedIpv6(host);
+  if (mappedIpv4) {
+    return BLOCKED_RANGES.check(mappedIpv4, "ipv4");
+  }
+  const ipv4 = net.isIPv4(host) ? host : normalizeNumericIpv4(host);
+  if (ipv4) {
+    return BLOCKED_RANGES.check(ipv4, "ipv4");
+  }
+  if (net.isIPv6(host)) {
+    return BLOCKED_RANGES.check(host, "ipv6");
+  }
+  return false;
+}
+
+/**
+ * Hostname as used for the block checks: brackets removed, lowercased, and a trailing
+ * DNS root dot stripped so `localhost.` cannot bypass the hostname list.
+ */
+function canonicalHostname(hostname: string): string {
+  return hostname
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .toLowerCase()
+    .replace(/\.+$/, "");
+}
 
 /**
  * Validates if a URL uses an allowed protocol (http or https only)
@@ -51,7 +189,26 @@ export function validateUrlProtocol(url: string): string {
     );
   }
 
-  logger.debug(`URL protocol validation passed: ${trimmedUrl}`);
+  // SSRF protection: reject loopback / private / link-local / metadata destinations (default-deny).
+  // FETCHER_MCP_ALLOW_PRIVATE_IPS covers literal addresses and blocked hostnames.
+  const host = canonicalHostname(parsedUrl.hostname);
+  if (!allowPrivateIps()) {
+    if (BLOCKED_HOSTNAMES.has(host) || host.endsWith(".localhost")) {
+      logger.error(`Blocked URL targeting a disallowed host: ${host} (URL: ${trimmedUrl})`);
+      throw new URLSecurityError(
+        `URL host "${host}" is not allowed (loopback/internal). Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
+      );
+    }
+    if (isBlockedLiteralAddress(host)) {
+      logger.error(`Blocked URL targeting a private/reserved address: ${host} (URL: ${trimmedUrl})`);
+      throw new URLSecurityError(
+        `URL host "${host}" resolves to a private or reserved address (SSRF protection). ` +
+          `Set FETCHER_MCP_ALLOW_PRIVATE_IPS=true to permit internal targets.`
+      );
+    }
+  }
+
+  logger.debug(`URL validation passed: ${trimmedUrl}`);
   return trimmedUrl;
 }
 
