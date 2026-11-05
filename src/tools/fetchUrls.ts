@@ -5,6 +5,12 @@ import { FetchOptions, FetchResult } from "../types/index.js";
 import { logger } from "../utils/logger.js";
 import { validateUrlsProtocol } from "../utils/urlValidator.js";
 
+function escapePageBoundaryMarkers(content: string): string {
+  return content.replace(/\[webpage\s+\d+\s+(?:begin|end)\]/gi, (marker) =>
+    marker.replace("[", "&#91;").replace("]", "&#93;"),
+  );
+}
+
 /**
  * Tool definition for fetch_urls
  */
@@ -150,7 +156,7 @@ export async function fetchUrls(args: any) {
     const combinedResults = results
       .map(
         (result, i) =>
-          `[webpage ${i + 1} begin]\n${result.content}\n[webpage ${i + 1} end]`,
+          `[webpage ${i + 1} begin]\n${escapePageBoundaryMarkers(result.content)}\n[webpage ${i + 1} end]`,
       )
       .join("\n\n");
 
